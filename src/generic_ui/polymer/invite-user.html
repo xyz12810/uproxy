@@ -1,0 +1,282 @@
+<link rel='import' href='../../bower/core-icons/core-icons.html'>
+<link rel='import' href='../../bower/core-overlay/core-overlay.html'>
+<link rel="import" href="../../bower/core-signals/core-signals.html">
+<link rel='import' href='../../bower/paper-input/paper-input-decorator.html'>
+<link rel='import' href='../../bower/polymer/polymer.html'>
+<link rel='import' href='button.html'>
+<link rel='import' href='network-invite-user.html'>
+<link rel="import" href="i18n-filter.html">
+<link rel='import' href='cloud-install.html'>
+
+<polymer-element name='uproxy-invite-user'>
+  <template>
+    <style>
+      #inviteUserPanel {
+        height: 100%;
+        width: 100%;
+        background-color: white;
+      }
+      .view {
+        overflow: auto;
+      }
+      .acceptInvite {
+        text-align: left;
+        margin: 18px 24px 14px 24px;
+        padding-bottom: 1em;
+      }
+      .acceptInvite paper-input-decorator {
+        padding-top: 0;
+        padding-bottom: 18px;
+        font-size: 16px;
+      }
+      #inviteCodeDecorator {
+        padding-bottom: 0;
+      }
+      a {
+        cursor: pointer;
+      }
+      #allInviteMethods {
+        text-align: center;
+      }
+      #loginToInviteFriendDialog {
+        min-width: 80%;
+      }
+      #loginToInviteFriendDialog h1 {
+        color: #333;
+        font-size: 18px;
+        font-weight: normal;
+        margin-top: 0;
+      }
+      #loginToInviteFriendDialog p {
+        color: #666;
+        line-height: 18px;
+        font-weight: lighter;
+        font-size: 12px;
+        letter-spacing: 0.5px;
+      }
+      core-icon[icon=clear] {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        color: rgb(180,180,180);
+        cursor: pointer;
+      }
+      #acceptInviteButton {
+        width: 100%;
+        margin-top: 18px;
+        margin-left: 0;
+        margin-right: 0;
+      }
+      .networkLoginButton {
+        cursor: pointer;
+        vertical-align: top;
+        padding: 1em 2em 1em 2em;
+      }
+      .networkLoginButton {
+        cursor: pointer;
+        vertical-align: top;
+        padding: 1em 2em 1em 2em;
+        border-bottom: 1px solid rgba(0, 0, 0, .10);
+      }
+      .networkLoginButton:last-child {
+        border-bottom: none;
+      }
+      .networkLoginButton .networkName {
+        margin-top: 0.7em;
+        margin-left: 1em;
+        font-size: 16px;
+        color: rgba(0, 0, 0, .86);
+        display: inline-block;
+        font-weight: 700;
+      }
+      .networkLoginButton core-icon {
+        width: 50px;
+        height: 50px;
+      }
+      .networkLoginButton .experimental {
+        font-size: 12px;
+      }
+      uproxy-button.login {
+        margin: 15px 0px;
+      }
+      uproxy-button.login /deep/ .button-content {
+        padding: 0px;
+      }
+      uproxy-button #buttonTextContainer {
+        padding: 0.7em 0.9em;
+        border-left: 1px solid rgba(255,255,255,0.3);
+      }
+      uproxy-button #buttonLogoContainer {
+        padding: 0em 0.3em;
+      }
+      uproxy-button.GMail {
+        background: #dd4b39;
+      }
+      uproxy-button.Facebook,
+      uproxy-button.Facebook-Firebase-V2 {
+        background: #3b5998;
+      }
+      uproxy-button.WeChat {
+        background: #6ab000;
+      }
+      uproxy-button.GitHub {
+        background: #666;
+      }
+      uproxy-button.Cloud {
+        background: #eee;
+        color: #666;
+      }
+      uproxy-dialog {
+        padding: 5px;
+      }
+      /* uproxy-faq-link is used in the translation for weWontPostLearnMore */
+      uproxy-faq-link {
+        font-weight: bold;
+      }
+      /* underline is not applied unless we do this hack.  TODO: find out why */
+      uproxy-faq-link::shadow span {
+        text-decoration: underline;
+        color: rgb(112, 112, 112);
+      }
+      .paleText {
+        color: #9e9e9e;
+      }
+      #weWontPostLearnMore {
+        font-size: 14px;
+        padding: 26px;
+        color: #999;
+        border-top: 1px solid rgb(221, 221, 221);
+      }
+      #allNetworkButtons {
+        text-align: left;
+      }
+      .categoryHeader {
+        text-align: left;
+        padding: 1em 2em 1em 2em;
+        background-color: rgb(225,246,244);  /* light aqua green */
+        color: rgba(0,0,0,0.54);
+        line-height: 22px;
+      }
+      #cloudInstall {
+        color: white;
+        background-color: #34AFCE;  /* blue */;
+        margin: 14px 24px 14px 24px;
+        padding: 2em 1em 2em 2em;
+        cursor: pointer;
+        line-height: 30px;
+        border-radius: 3px;
+      }
+      #cloudInstall .content {
+        width: 85%;
+        vertical-align: middle;
+        display: inline-block;
+      }
+      #cloudInstall p {
+        line-height: 1.75em;
+      }
+      #cloudInstall h1 {
+        font-weight: 300;
+        margin-top: 0;
+        font-size: 20px;
+        line-height: 30px;
+      }
+      #cloudInstall img {
+        height: 50px;
+        margin-bottom: 1em;
+      }
+      .chevronWrapper {
+        display: inline-block;
+        vertical-align: middle;
+        text-align: right;
+      }
+      #cloudInstall .chevronWrapper {
+        width: 13%;  /* TODO: why doesn't 15% work? */
+      }
+      core-icon[icon=chevron-right] {
+        width: 25px;
+        height: 25px;
+      }
+      .networkLoginButton .chevronWrapper {
+        position: absolute;
+        right: 2em;
+        margin-top: 12.5px; /* (network icon height - chevron height) / 2 */
+      }
+    </style>
+
+    <core-signals on-core-signal-open-invite-user-dialog='{{ openInviteUserPanel }}'></core-signals>
+
+    <core-overlay id='inviteUserPanel'>
+      <uproxy-app-bar on-go-back='{{ closeInviteUserPanel }}'>
+        {{ 'CONNECT_WITH_A_FRIEND' | $$ }}
+      </uproxy-app-bar>
+
+      <div class='view' flex>
+        <div id="allInviteMethods">
+          <div class='acceptInvite'>
+            <paper-input-decorator id='inviteCodeDecorator' label='{{ "INVITATION_PLACEHOLDER_TEXT" | $$ }}' layout vertical>
+              <input is='core-input' value='{{ inviteCode }}' />
+            </paper-input-decorator>
+            <uproxy-button id='acceptInviteButton' hidden?='{{ inviteCode.length === 0 }}' raised on-tap='{{ acceptInvite }}'>{{ "SUBMIT_BUTTON_TEXT" | $$ }}</uproxy-button>
+          </div>
+
+          <div id='allNetworkButtons'>
+
+            <div id='cloudInstall' hidden?='{{ model.cloudProviderNames.length < 1 }}' on-tap='{{ cloudInstall }}'>
+              <div class='content'>
+                <img src='../../icons/cloud/connect-cloud.png'>
+                <h1>{{ 'CLOUD_INSTALL_INVITE_SCREEN_TITLE' | $$ }}</h1>
+                <p>{{ 'CLOUD_INSTALL_INVITE_SCREEN_MESSAGE' | $$ }}</p>
+              </div>
+              <div class='chevronWrapper'>
+                <core-icon icon="chevron-right"></core-icon>
+              </div>
+            </div> <!-- end of cloud -->
+
+            <div class='categoryHeader'>{{ "CHOOSE_A_SOCIAL_NETWORK" | $$ }}</div>
+
+            <template repeat='{{ n in model.networkNames }}' vertical layout>
+              <div hidden?='{{ n == "Cloud" }}' on-tap='{{ networkTapped }}' class='networkLoginButton' data-network='{{n}}'>
+                <core-icon icon='uproxy-icons:{{n}}'></core-icon>
+                <div class='networkName'>{{getNetworkDisplayName(n)}}</div>
+                <span class='experimental paleText' hidden?='{{!isExperimentalNetwork(n)}}'>
+                  (Experimental)
+                </span>
+                <div class='chevronWrapper'>
+                  <core-icon icon="chevron-right"></core-icon>
+                </div>
+              </div>
+            </template>
+
+            <div class='networkLoginButton copypaste' on-tap='{{ copypaste }}'>
+              <core-icon icon='uproxy-icons:CopyAndPaste'></core-icon>
+              <div class='networkName'>{{ "SET_UP_ONE_TIME" | $$ }}</div>
+              <div class='chevronWrapper'>
+                <core-icon icon="chevron-right"></core-icon>
+              </div>
+            </div>
+
+          </div> <!-- end of #allNetworkButtons -->
+
+          <div id="weWontPostLearnMore"></div>
+        </div> <!--End of #allInviteMethods -->
+      </div>
+    </core-overlay>
+
+    <uproxy-dialog layered="false" backdrop="true" id='loginToInviteFriendDialog' on-core-overlay-open-completed="{{loginToInviteFriendDialogOpened}}">
+      <h1>{{ "SIGN_IN_TO_NETWORK" | $$({network: getNetworkDisplayName(selectedNetworkName)})}}</h1>
+      <core-icon icon="clear" on-tap='{{ closeLoginDialog }}'></core-icon>
+      <p id="networkLoginConfirmation"></p>
+      <div style="text-align:center;">
+        <uproxy-button raised on-tap='{{loginTapped}}' class='login {{selectedNetworkName}}'>
+          <span id="buttonLogoContainer"><core-icon icon='uproxy-icons:{{selectedNetworkName}}'></core-icon></span>
+          <span id="buttonTextContainer">{{ "SIGN_IN_TO_NETWORK" | $$({network: getNetworkDisplayName(selectedNetworkName)})}}</span>
+        </uproxy-button>
+      </div>
+    </uproxy-dialog>
+
+    <uproxy-network-invite-user network="{{selectedNetworkName}}"></uproxy-network-invite-user>
+    <uproxy-cloud-install></uproxy-cloud-install>
+
+  </template>
+  <script src='invite-user.js'></script>
+</polymer-element>

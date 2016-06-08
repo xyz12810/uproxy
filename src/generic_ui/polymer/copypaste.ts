@@ -13,7 +13,13 @@ var ui = ui_context.ui;
 var core = ui_context.core;
 var model = ui_context.model;
 
+enum STATE {
+  GETTING,
+  SHARING,
+};
+
 Polymer({
+  STATE: STATE,
   init: function() {
     /* bring copyPaste to the front in get mode */
     ui.view = ui_constants.View.COPYPASTE;
@@ -22,7 +28,9 @@ Polymer({
       this.startGetting();
     }
   },
+  lastState: STATE.SHARING,
   startGetting: function() {
+    this.lastState = STATE.GETTING;
     this.gettingResponse = '';
 
     var doneStopping :Promise<void>;
@@ -34,13 +42,12 @@ Polymer({
     }
 
     doneStopping.then(() => {
-      ui.copyPasteGettingMessages = [];
-      ui.copyPasteError = ui_constants.CopyPasteError.NONE;
-      ui.copyPastePendingEndpoint = null;
+      ui.copyPasteState.message = '';
+      ui.copyPasteState.error = ui_constants.CopyPasteError.NONE;
 
       return core.startCopyPasteGet();
     }).then((endpoint) => {
-      ui.copyPastePendingEndpoint = endpoint;
+      ui.copyPasteState.activeEndpoint = endpoint;
     }).catch((e) => {
       // TODO we will see this any time the connection is aborted by the user or
       // when something actually goes wrong with the connection.  We should
@@ -49,43 +56,34 @@ Polymer({
       // an error, so we are just going to warn about it.
 
       console.warn('error when starting copy+paste get', e);
-      ui.copyPasteError = ui_constants.CopyPasteError.FAILED;
+      ui.copyPasteState.error = ui_constants.CopyPasteError.FAILED;
     });
   },
   handleBackClick: function() {
-    // do not let the user navigate away from this view if copypaste is active
-    if ((ui.copyPasteState.localGettingFromRemote === social.GettingState.GETTING_ACCESS && ui.copyPastePendingEndpoint === null) ||
-        ui.copyPasteState.localSharingWithRemote === social.SharingState.SHARING_ACCESS) {
-      return;
-    }
-
     if (ui.copyPasteState.localGettingFromRemote === social.GettingState.NONE &&
         ui.copyPasteState.localSharingWithRemote === social.SharingState.NONE) {
-      ui.view = ui_constants.View.SPLASH;
+      ui.view = ui_constants.View.ROSTER;
       return;
     }
 
     this.fire('open-dialog', {
-      heading: ui.i18n_t("GO_BACK"),
-      message: ui.i18n_t("ARE_YOU_SURE"),
+      heading: ui.i18n_t('GO_BACK'),
+      message: ui.i18n_t('ARE_YOU_SURE'),
       buttons: [{
-        text: ui.i18n_t("YES"),
+        text: ui.i18n_t('YES'),
         signal: 'copypaste-back'
       }, {
-        text: ui.i18n_t("NO"),
+        text: ui.i18n_t('NO'),
         dismissive: true
       }]
     });
   },
   stopGetting: function() {
     ui.stopUsingProxy();
-    return core.stopCopyPasteGet().then(() => {
-      // clean up the pending endpoint in case we got here from going back
-      ui.copyPastePendingEndpoint = null;
-    });
+    return core.stopCopyPasteGet();
   },
   startProxying: function() {
-    if (!ui.copyPastePendingEndpoint) {
+    if (!ui.copyPasteState.activeEndpoint) {
       console.error('Attempting to start copy+paste proxying without a pending endpoint');
       return;
     }
@@ -95,17 +93,16 @@ Polymer({
       return;
     }
 
-    ui.startGettingInUiAndConfig(null, ui.copyPastePendingEndpoint);
-    ui.copyPastePendingEndpoint = null;
+    ui.copyPasteState.active = true;
+    ui.startGettingInUiAndConfig(null, ui.copyPasteState.activeEndpoint);
   },
   switchToGetting: function() {
     this.stopSharing().then(() => {
-      if (ui.copyPasteState.localGettingFromRemote === social.GettingState.NONE) {
-        this.startGetting();
-      }
+      this.startGetting();
     });
   },
   stopSharing: function() {
+    this.lastState = STATE.SHARING;
     return core.stopCopyPasteShare();
   },
   select: function(e :Event, d :Object, sender :HTMLInputElement) {
@@ -113,13 +110,13 @@ Polymer({
     sender.select();
   },
   dismissError: function() {
-    ui.copyPasteError = ui_constants.CopyPasteError.NONE;
+    ui.copyPasteState.error = ui_constants.CopyPasteError.NONE;
   },
   exitMode: function() {
     // if we are currently in the middle of setting up a connection, end it
     var doneStopping :Promise<void>;
     if (ui.copyPasteState.localGettingFromRemote !== social.GettingState.NONE) {
-      doneStopping = this.stopGetting()
+      doneStopping = this.stopGetting();
     } else {
       doneStopping = Promise.resolve<void>();
     }
@@ -135,11 +132,11 @@ Polymer({
     }).then(() => {
       // go back to the previous view regardless of whether we successfully
       // stopped the connection
-      ui.view = ui_constants.View.SPLASH;
+      ui.view = ui_constants.View.ROSTER;
     })
   },
-  encodeMessage: function(message :social.PeerMessageType) {
-    return encodeURIComponent(btoa(JSON.stringify(message)));
+  encodeMessage: function(message:string) {
+    return encodeURIComponent(message);
   },
   gettingResponse: '',
   gettingLinkError: false,
@@ -161,7 +158,7 @@ Polymer({
     this.showGettingSubmit = true;
   },
   submitGettingLink: function() {
-    ui.handleUrlData(this.gettingResponse);
+    ui.handleCopyPasteUrlData(this.gettingResponse);
   },
   ready: function() {
     this.ui = ui;

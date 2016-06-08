@@ -1,3 +1,5 @@
+/// <reference path='../../../third_party/typings/browser.d.ts' />
+
 /**
  * freedom-mocks.ts
  *
@@ -6,14 +8,10 @@
  * This file must be compiled independently of all other typescript in uProxy.
  */
 
-/// <reference path='../../../third_party/typings/es6-promise/es6-promise.d.ts' />
-/// <reference path='../../../third_party/typings/jasmine/jasmine.d.ts' />
-/// <reference path='../../../third_party/freedom-typings/storage.d.ts' />
+import MockEventHandler = require('../lib/freedom/mocks/mock-eventhandler');
+import arraybuffers = require('../lib/arraybuffers/arraybuffers');
 
-import MockEventHandler = require('../../../third_party/uproxy-lib/freedom/mocks/mock-eventhandler');
-import arraybuffers = require('../../../third_party/uproxy-lib/arraybuffers/arraybuffers');
-
-export class MockFreedomStorage implements freedom_Storage {
+export class MockFreedomStorage implements freedom.Storage.Storage {
 
   private store_ :{[key :string] :Object} = {};
 
@@ -36,7 +34,7 @@ export class MockFreedomStorage implements freedom_Storage {
   }
 
   public remove = (key :string) => {
-    //console.log("\n  public remove(" + key + ").");
+    //console.log('\n  public remove(' + key + ').');
     var prev = this.store_[key];
     delete this.store_[key];
     return Promise.resolve(prev);
@@ -94,7 +92,7 @@ export class PgpProvider {
     return Promise.resolve(data)
   }
 
-  public verifyDecrypt = (data :ArrayBuffer, key :string) :Promise<VerifyDecryptResult> => {
+  public verifyDecrypt = (data :ArrayBuffer, key :string) :Promise<freedom.PgpProvider.VerifyDecryptResult> => {
     return Promise.resolve({
       data: data,
       signedBy: ['']

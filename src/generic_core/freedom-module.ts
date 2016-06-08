@@ -1,3 +1,5 @@
+/// <reference path='../../../third_party/typings/browser.d.ts' />
+
 /**
  * core.ts
  *
@@ -6,28 +8,25 @@
  * front-end.
  *
  * In-memory state includes:
- *  - Roster, which is a list of contacts, always synced with XMPP friend lists.
+ *  - Roster, which is a list of contacts, always synced with friend lists.
  *  - Instances, which is a list of active uProxy installs.
  */
 
-/// <reference path='../../../third_party/freedom-typings/freedom-module-env.d.ts' />
-/// <reference path='../../../third_party/freedom-typings/social.d.ts' />
-
-import logging = require('../../../third_party/uproxy-lib/logging/logging');
-import uproxy_core_api = require('../interfaces/uproxy_core_api');
-import social_network = require('./social');
-import version = require('../version/version');
 import browser_connector = require('../interfaces/browser_connector');
+import globals = require('./globals');
+import logging = require('../lib/logging/logging');
+import loggingprovider = require('../lib/loggingprovider/loggingprovider.types');
+import metrics_module = require('./metrics');
+import rtc_to_net = require('../lib/rtc-to-net/rtc-to-net');
+import social_network = require('./social');
+import social = require('../interfaces/social');
+import socks_to_rtc = require('../lib/socks-to-rtc/socks-to-rtc');
 import ui = require('./ui_connector');
 import uproxy_core = require('./uproxy_core');
-import logging_types = require('../../../third_party/uproxy-lib/loggingprovider/loggingprovider.types');
-import rtc_to_net = require('../../../third_party/uproxy-lib/rtc-to-net/rtc-to-net');
-import socks_to_rtc = require('../../../third_party/uproxy-lib/socks-to-rtc/socks-to-rtc');
-import globals = require('./globals');
-import metrics_module = require('./metrics');
+import uproxy_core_api = require('../interfaces/uproxy_core_api');
+import version = require('../generic/version');
 
 import ui_connector = ui.connector;
-
 
 // Prepare all the social providers from the manifest.
 social_network.initializeNetworks();
@@ -46,91 +45,49 @@ var exported = {
   browser_connector: browser_connector,
   ui_connector: ui_connector,
   loggingController: uproxy_core.loggingController,
-  logging_types: logging_types,
+  logging_types: loggingprovider,
   socks_to_rtc: socks_to_rtc,
   rtc_to_net: rtc_to_net,
   globals: globals
 };
 export = exported;
 
-ui_connector.onPromiseCommand(
-    uproxy_core_api.Command.LOGIN,
-    core.login);
+var commands :{[command :number] :((data?:any) => (Promise<any>|void))} = {};
+commands[uproxy_core_api.Command.LOGIN] = core.login;
+commands[uproxy_core_api.Command.LOGOUT] = core.logout;
+commands[uproxy_core_api.Command.MODIFY_CONSENT] = core.modifyConsent;
+commands[uproxy_core_api.Command.START_PROXYING_COPYPASTE_GET] = core.startCopyPasteGet;
+commands[uproxy_core_api.Command.STOP_PROXYING_COPYPASTE_GET] = core.stopCopyPasteGet;
+commands[uproxy_core_api.Command.START_PROXYING_COPYPASTE_SHARE] = core.startCopyPasteShare;
+commands[uproxy_core_api.Command.STOP_PROXYING_COPYPASTE_SHARE] = core.stopCopyPasteShare;
+commands[uproxy_core_api.Command.COPYPASTE_SIGNALLING_MESSAGE] = core.sendCopyPasteSignal;
+commands[uproxy_core_api.Command.START_PROXYING] = core.start;
+commands[uproxy_core_api.Command.INVITE_GITHUB_USER] = core.inviteGitHubUser;
+commands[uproxy_core_api.Command.GET_INVITE_URL] = core.getInviteUrl;
+commands[uproxy_core_api.Command.SEND_EMAIL] = core.sendEmail;
+commands[uproxy_core_api.Command.STOP_PROXYING] = core.stop;
+commands[uproxy_core_api.Command.UPDATE_GLOBAL_SETTINGS] = core.updateGlobalSettings;
+commands[uproxy_core_api.Command.GET_LOGS] = core.getLogsAndNetworkInfo;
+commands[uproxy_core_api.Command.GET_NAT_TYPE] = core.getNatType;
+commands[uproxy_core_api.Command.REFRESH_PORT_CONTROL] = core.refreshPortControlSupport;
+commands[uproxy_core_api.Command.GET_FULL_STATE] = core.getFullState;
+commands[uproxy_core_api.Command.HANDLE_CORE_UPDATE] = core.handleUpdate;
+commands[uproxy_core_api.Command.GET_VERSION] = core.getVersion;
+commands[uproxy_core_api.Command.PING_UNTIL_ONLINE] = core.pingUntilOnline;
+commands[uproxy_core_api.Command.ACCEPT_INVITATION] = core.acceptInvitation;
+commands[uproxy_core_api.Command.CLOUD_UPDATE] = core.cloudUpdate;
+commands[uproxy_core_api.Command.UPDATE_ORG_POLICY] = core.updateOrgPolicy;
+commands[uproxy_core_api.Command.REMOVE_CONTACT] = core.removeContact;
+commands[uproxy_core_api.Command.POST_REPORT] = core.postReport;
 
-ui_connector.onPromiseCommand(
-    uproxy_core_api.Command.LOGOUT,
-    core.logout);
-
-ui_connector.onCommand(uproxy_core_api.Command.MODIFY_CONSENT,
-    core.modifyConsent);
-
-ui_connector.onPromiseCommand(
-    uproxy_core_api.Command.START_PROXYING_COPYPASTE_GET,
-    core.startCopyPasteGet);
-
-ui_connector.onPromiseCommand(
-    uproxy_core_api.Command.STOP_PROXYING_COPYPASTE_GET,
-    core.stopCopyPasteGet);
-
-ui_connector.onCommand(
-    uproxy_core_api.Command.START_PROXYING_COPYPASTE_SHARE,
-    core.startCopyPasteShare);
-
-ui_connector.onPromiseCommand(
-    uproxy_core_api.Command.STOP_PROXYING_COPYPASTE_SHARE,
-    core.stopCopyPasteShare);
-
-ui_connector.onCommand(
-    uproxy_core_api.Command.COPYPASTE_SIGNALLING_MESSAGE,
-    core.sendCopyPasteSignal);
-
-ui_connector.onPromiseCommand(
-    uproxy_core_api.Command.START_PROXYING,
-    core.start);
-
-ui_connector.onCommand(uproxy_core_api.Command.STOP_PROXYING,
-    core.stop);
-
-ui_connector.onCommand(
-    uproxy_core_api.Command.HANDLE_MANUAL_NETWORK_INBOUND_MESSAGE,
-    core.handleManualNetworkInboundMessage);
-
-ui_connector.onCommand(
-    uproxy_core_api.Command.UPDATE_GLOBAL_SETTINGS,
-    core.updateGlobalSettings);
-
-ui_connector.onPromiseCommand(
-    uproxy_core_api.Command.GET_LOGS,
-    core.getLogsAndNetworkInfo);
-
-ui_connector.onPromiseCommand(
-    uproxy_core_api.Command.GET_NAT_TYPE,
-    core.getNatType);
-
-ui_connector.onPromiseCommand(
-    uproxy_core_api.Command.REFRESH_PORT_CONTROL,
-    core.refreshPortControlSupport);
-
-ui_connector.onPromiseCommand(
-    uproxy_core_api.Command.GET_FULL_STATE,
-    core.getFullState);
-
-ui_connector.onCommand(uproxy_core_api.Command.HANDLE_CORE_UPDATE,
-    core.handleUpdate);
-
-ui_connector.onPromiseCommand(uproxy_core_api.Command.GET_VERSION,
-    core.getVersion);
+for (var command in commands) {
+  ui_connector.onCommand(parseInt(command, 10), commands[command]);
+}
 
 var dailyMetricsReporter = new metrics_module.DailyMetricsReporter(
     globals.metrics, globals.storage, core.getNetworkInfoObj,
     (payload :any) => {
       if (globals.settings.statsReportingEnabled) {
-        ui_connector.update(
-            uproxy_core_api.Update.POST_TO_CLOUDFRONT,
-            {payload: payload, cloudfrontPath: 'submit-rappor-stats'});
+        core.postReport({payload: payload, path: 'submit-rappor-stats'});
       }
     });
-
-ui_connector.onPromiseCommand(
-    uproxy_core_api.Command.PING_UNTIL_ONLINE,
-    core.pingUntilOnline);

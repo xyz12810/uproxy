@@ -8,6 +8,8 @@
         background-size: cover;
         background-repeat: no-repeat;
         background-position: center;
+        /* Default background needed for jdenticons which use transparency */
+        background-color: white;
         width: inherit;
         height: inherit;
         position: relative;
@@ -15,11 +17,11 @@
 
       #image core-icon {
         /* network icon */
-        position: absolute;
+        position: absolute !important;
         right: 0px;
         bottom: 0px;
-        height: 30%;
-        width: 30%;
+        height: 30% !important;
+        width: 30% !important;
       }
 
       #image core-icon.full {
@@ -28,8 +30,8 @@
       }
     </style>
 
-    <div id='image' style='background-image: url({{ src }});'>
-      <core-icon icon='uproxy-icons:{{ network }}' hidden?='{{ !showIcon }}' class='{{ {full: !src} | tokenList }}' ></core-icon>
+    <div id='image' style='background-image: url({{ src || "../icons/contact-default.png" }});'>
+      <core-icon icon='uproxy-icons:{{ network + "-small" }}' hidden?='{{ !showIcon }}' class='{{ {full: !src} | tokenList }}' ></core-icon>
     </div>
   </template>
 </polymer-element>

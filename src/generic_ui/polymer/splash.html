@@ -1,11 +1,11 @@
 <link rel='import' href='../../bower/polymer/polymer.html'>
-<link rel='import' href='../../bower/paper-button/paper-button.html'>
+<link rel="import" href="../../bower/paper-button/paper-button.html">
 <link rel='import' href='../../bower/paper-item/paper-item.html'>
 <link rel="import" href="../../bower/paper-dropdown-menu/paper-dropdown-menu.html">
 <link rel="import" href="../../bower/paper-dropdown/paper-dropdown.html">
 <link rel="import" href="../../bower/core-menu/core-menu.html">
+<link rel='import' href='button.html'>
 <link rel='import' href='faq-link.html'>
-<link rel='import' href='network.html'>
 
 <polymer-element name='uproxy-splash' attributes=''>
   <template>
@@ -23,7 +23,7 @@
     }
     h1 {
       font-size: 1.4em;
-      color: #009688;  /* dark green */
+      color: #12A391;  /* dark green */
       margin-bottom: 1.5em;
     }
     h1.uproxyTitle {
@@ -35,9 +35,6 @@
     }
     h1.uproxyTitle .first-u {
       color: #10c9b1;
-    }
-    h1.sub {
-      font-weight: normal;
     }
     #proxy-pic {
       opacity: 0.3;
@@ -59,35 +56,23 @@
       opacity: 0;
       z-index: -1;
     }
-    paper-button {
+    #nextWrapper uproxy-button {
       width: 150px;
     }
-    uproxy-network {
-      padding: 12px;
-    }
     #nextWrapper {
-      margin-top: 50px;
+      margin-top: 1em;
     }
-    #oneTimeConnection {
-      margin-bottom: 1.5em;
-    }
-    #submitFeedback {
-      text-decoration: underline;
-      cursor: pointer;
-      display: inline-block;
-      margin-top: 30px;
-    }
-    uproxy-faq-link {
+    uproxy-faq-link paper-button {
       width: 100%;
-      padding-top: 1em;
-      padding-bottom: 1em;
+      padding-top: .3em;
+      padding-bottom: .3em;
       border-top: 1px solid rgb(221, 221, 221);
-      text-transform: uppercase;
+      margin: 0;
     }
     #logo {
       margin-bottom: 1em;
-      width: 114px;
-      height: 114px;
+      width: 114px !important;
+      height: 114px !important;
     }
     .prevArrow {
       position: absolute;
@@ -97,20 +82,35 @@
       margin-left: 8px;
       margin-right: 8px;
     }
-    #intro1, #networks {
+    #intro1, #metricsOptIn {
       height: 100%;
     }
+    #metricsOptIn {
+      text-align: start;
+    }
+    #metricsButtons {
+      text-align: center;
+    }
+    #metricsButtons uproxy-button {
+      padding: 0px 10px;
+      margin: 1em;
+    }
+    #languageLink paper-dropdown-menu {
+      border-bottom: 0px;
+      font-size: 13px;
+      margin-top: 1.5em;
+    }
     #languageLink core-icon {
-      height: 20px;
-      width: 20px;
+      height: 18px !important;
+      width: 18px !important;
     }
     #languageLink paper-item {
       font-size: 13px;
-      line-height: 14px;
     }
     #languageLink paper-item::shadow .button-content {
       padding: 0;
     }
+
     </style>
 
     <div horizontal layout>
@@ -126,13 +126,10 @@
           {{ "ABOUT_UPROXY" | $$ }}
         </p>
 
-        <div id='nextWrapper'>
-          <paper-button raised on-tap='{{next}}'>{{ "NEXT" | $$ }}</paper-button>
-        </div>
         <div id='languageLink'>
           <core-icon icon='language'></core-icon>
           <paper-dropdown-menu label='{{ "LANGUAGE" | $$ }}'>
-            <paper-dropdown class="dropdown">
+            <paper-dropdown class="dropdown" valign="bottom">
                 <core-menu class="menu" on-core-select='{{ updateLanguage }}'>
                     <template repeat='{{ l in languages }}'>
                       <paper-item languageCode='{{ l.languageCode }}'>
@@ -142,33 +139,39 @@
                 </core-menu>
             </paper-dropdown>
           </paper-dropdown-menu>
+        </div> <!-- end of #languageLink -->
+
+        <div id='nextWrapper'>
+          <uproxy-button raised on-tap='{{next}}'>{{ "NEXT" | $$ }}</uproxy-button>
         </div>
-      </div>
+
+      </div> <!-- end of .view -->
 
       <uproxy-faq-link anchor='whatIsUproxy'>
-        {{ "LEARN_MORE_UPROXY" | $$ }}
+        <paper-button>
+          {{ "LEARN_MORE_UPROXY" | $$ }}
+        </paper-button>
       </uproxy-faq-link>
-    </div>
 
-    <div vertical layout id='networks' hidden?='{{SPLASH_STATES.NETWORKS!==model.globalSettings.splashState}}'>
-      <div class='view' flex>
-        <h1 class='sub'>{{ "WHICH_SOCIAL_NETWORK" | $$ }}</h1>
-        <p>{{ "WHY_SOCIAL_NETWORK" | $$ }}</p>
-        <template repeat='{{ n in model.networkNames }}' vertical layout>
-          <uproxy-network networkName='{{n}}'></uproxy-network>
-        </template>
-        <p id='oneTimeConnection'>
-          <a href='#' on-tap='{{ copypaste }}'>{{ "SET_UP_ONE_TIME" | $$ }}</a>
-        </p>
+    </div> <!-- end of #intro1 -->
+
+    <div vertical layout id="metricsOptIn" hidden?='{{SPLASH_STATES.METRICS_OPT_IN!==model.globalSettings.splashState}}'>
+      <div class="view" flex>
+        <h1>{{ "WELCOME" | $$ }}</h1>
         <p>
-          {{ "WE_WONT_POST" | $$ }}
+          {{ "BETA_MESSAGE" | $$ }}<br><br>
+          {{ "CHANGE_STATS_CHOICE" | $$ }}
         </p>
-        <span id='submitFeedback' on-tap='{{ openFeedbackForm }}'>
-          {{ "SUBMIT_FEEDBACK" | $$ }}
-        </span>
+        <p><b>{{ "ENABLE_METRICS" | $$ }}</b></p>
+        <div id="metricsButtons">
+          <uproxy-button id='enableStatsButton' on-tap='{{ enableStats }}'>{{ "IM_IN" | $$ }}</uproxy-button>
+          <uproxy-button id='disableStatsButton' on-tap='{{ disableStats }}'>{{ "NO_THANKS" | $$ }}</uproxy-button>
+        </div>
       </div>
-      <uproxy-faq-link anchor='whyDoesUproxyConnect'>
-        {{ "LEARN_MORE_SOCIAL" | $$ }}
+      <uproxy-faq-link anchor='doesUproxyLogData'>
+        <paper-button>
+          {{ "MORE_ABOUT_METRICS" | $$ }}
+        </paper-button>
       </uproxy-faq-link>
     </div>
 

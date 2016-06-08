@@ -1,4 +1,4 @@
-/// <reference path='../../../../../third_party/typings/jasmine/jasmine.d.ts' />
+/// <reference path='../../../../../third_party/typings/browser.d.ts'/>
 
 import ChromeCoreConnector = require('./chrome_core_connector');
 import ChromeBrowserApi = require('./chrome_browser_api');
@@ -149,8 +149,8 @@ describe('core-connector', () => {
       expect(chrome.browserAction['setIcon']).toHaveBeenCalledWith(
         {
           path: {
-            "19": "icons/19_" + Constants.LOGGED_OUT_ICON,
-            "38": "icons/38_" + Constants.LOGGED_OUT_ICON,
+            '19': 'icons/19_' + Constants.LOGGED_OUT_ICON,
+            '38': 'icons/38_' + Constants.LOGGED_OUT_ICON,
           }
         });
     }).then(done);

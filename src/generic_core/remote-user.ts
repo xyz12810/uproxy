@@ -1,3 +1,5 @@
+/// <reference path='../../../third_party/typings/browser.d.ts' />
+
 /**
  * user.ts
  *
@@ -20,21 +22,20 @@
  * The tricky bit is that the Instance is associated not with the 'human' chat
  * client, but with the 'uProxy' non-human client.
  */
-/// <reference path='../../../third_party/freedom-typings/freedom-module-env.d.ts' />
 
-import logging = require('../../../third_party/uproxy-lib/logging/logging');
-import remote_instance = require('./remote-instance');
-import social = require('../interfaces/social');
-import bridge = require('../../../third_party/uproxy-lib/bridge/bridge');
+import bridge = require('../lib/bridge/bridge');
 import consent = require('./consent');
 import globals = require('./globals');
+import _ = require('lodash');
+import logging = require('../lib/logging/logging');
+import Persistent = require('../interfaces/persistent');
+import remote_instance = require('./remote-instance');
+import social = require('../interfaces/social');
 import ui = require('./ui_connector');
 import uproxy_core_api = require('../interfaces/uproxy_core_api');
-import _ = require('lodash');
 
 import storage = globals.storage;
 
-import Persistent = require('../interfaces/persistent');
 
 var log :logging.Log = new logging.Log('remote-user');
 
@@ -53,7 +54,7 @@ var log :logging.Log = new logging.Log('remote-user');
     // Name of the user as provided by the social network.
     public name :string;
     public clientIdToStatusMap :{ [clientId :string] :social.ClientStatus };
-    public profile :freedom_Social.UserProfile;
+    public profile :social.UserProfile;
 
     public consent :consent.State;
 
@@ -89,6 +90,7 @@ var log :logging.Log = new logging.Log('remote-user');
       this.name = 'pending';
       this.profile = {
         userId: this.userId,
+        name: '',
         timestamp: Date.now()
       }
       this.clientIdToStatusMap = {};
@@ -98,6 +100,13 @@ var log :logging.Log = new logging.Log('remote-user');
 
       this.consent =
           new consent.State(userId === this.network.myInstance.userId);
+
+      // Because it requires user action to add a cloud friend, and because
+      // these cloud instances are only sharers, by default all users are
+      // requesting access from cloud instances.
+      if (this.network.name === 'Cloud') {
+        this.consent.localRequestsAccessFromRemote = true;
+      }
 
       storage.load<social.UserState>(this.getStorePath()).then((state) => {
         this.restoreState(state);
@@ -112,7 +121,7 @@ var log :logging.Log = new logging.Log('remote-user');
      * Update the information about this user.
      * The userId must match.
      */
-    public update = (profile :freedom_Social.UserProfile) : void => {
+    public update = (profile :social.UserProfile) : void => {
       if (profile.userId != this.userId) {
         throw Error('Updating User ' + this.userId +
                     ' with unexpected userID: ' + profile.userId);
@@ -120,6 +129,11 @@ var log :logging.Log = new logging.Log('remote-user');
       this.name = profile.name;
       this.fulfillNameReceived_(this.name);
       this.profile = profile;
+      if (!this.profile.status && this.network.name === 'Cloud') {
+        this.profile.status = social.UserStatus.CLOUD_INSTANCE_SHARED_WITH_LOCAL;
+      } else if (typeof this.profile.status === 'undefined') {
+        this.profile.status = social.UserStatus.FRIEND;
+      }
       this.saveToStorage();
       this.notifyUI();
     }
@@ -191,7 +205,14 @@ var log :logging.Log = new logging.Log('remote-user');
       switch (msg.type) {
         case social.PeerMessageType.INSTANCE:
           this.syncInstance_(clientId, <social.InstanceHandshake>msg.data,
-              msg.version).catch((e) => {
+              msg.version).then((instance: remote_instance.RemoteInstance) => {
+              // Check if we have an unusedPermissionToken for this instance.
+              if (instance.unusedPermissionToken) {
+                this.sendPermissionToken(clientId, instance.unusedPermissionToken);
+                instance.unusedPermissionToken = null;
+                instance.saveToStorage();
+              }
+            }).catch((e) => {
             log.error('syncInstance_ failed for ', msg.data);
           });
           return;
@@ -214,6 +235,25 @@ var log :logging.Log = new logging.Log('remote-user');
         case social.PeerMessageType.INSTANCE_REQUEST:
           log.debug('received instance request', clientId);
           this.sendInstanceHandshake(clientId);
+          return;
+
+        case social.PeerMessageType.PERMISSION_TOKEN:
+          var token = (<social.PermissionTokenMessage>msg.data).token;
+          var tokenInfo =
+              this.network.myInstance.exchangeInviteToken(token, this.userId);
+          if (!tokenInfo) {
+            return;
+          }
+          if (tokenInfo.isOffering) {
+            this.consent.localGrantsAccessToRemote = true;
+          }
+          if (tokenInfo.isRequesting) {
+            this.consent.localRequestsAccessFromRemote = true;
+          }
+          // Send them a new instance handshake with updated consent.
+          this.sendInstanceHandshake(clientId);
+          this.saveToStorage();  // Save new consent to storage.
+          this.notifyUI();  // Notify UI that consent has changed
           return;
 
         default:
@@ -249,7 +289,7 @@ var log :logging.Log = new logging.Log('remote-user');
     public syncInstance_ = (
         clientId :string,
         instanceHandshake :social.InstanceHandshake,
-        messageVersion :number) : Promise<void> => {
+        messageVersion :number) : Promise<remote_instance.RemoteInstance> => {
       // TODO: use handlerQueues to process instances messages in order, to
       // address potential race conditions described in
       // https://github.com/uProxy/uproxy/issues/734
@@ -275,24 +315,6 @@ var log :logging.Log = new logging.Log('remote-user');
       this.clientToInstanceMap_[clientId] = instanceId;
       this.instanceToClientMap_[instanceId] = clientId;
 
-      // Set user's name from the instance, only if it is not yet set.
-      // This is a work-around for not getting a UserProfile for some users,
-      // see https://github.com/uProxy/uproxy/issues/1510
-      if (instanceHandshake.name && this.name == 'pending') {
-        log.info('No UserProfile available, setting name from instance');
-        this.name = instanceHandshake.name;
-        this.fulfillNameReceived_(instanceHandshake.name);
-      } else if (instanceHandshake.userId && this.name == 'pending') {
-        // Sometimes users don't get their own UserProfile.  In this case
-        // if we haven't received their UserProfile either, we should set
-        // their name to what they believe their userId is.  For GTalk users,
-        // this should be the non-anomized ID (i.e. not a
-        // @public.talk.google.com ID).
-        log.info('No UserProfile available, setting name from userId');
-        this.name = instanceHandshake.userId;
-        this.fulfillNameReceived_(instanceHandshake.userId);
-      }
-
       // Create or update the Instance object.
       var instance = this.instances_[instanceId];
       if (!instance) {
@@ -304,6 +326,7 @@ var log :logging.Log = new logging.Log('remote-user');
           messageVersion).then(() => {
         this.saveToStorage();
         this.notifyUI();
+        return instance;
       });
     }
 
@@ -384,7 +407,8 @@ var log :logging.Log = new logging.Log('remote-user');
           userId: this.profile.userId,
           name: this.profile.name,
           imageData: this.profile.imageData,
-          url: this.profile.url
+          url: this.profile.url,
+          status: this.profile.status
         },
         consent: this.consent,
         offeringInstances: offeringInstanceStatesForUi,
@@ -393,6 +417,7 @@ var log :logging.Log = new logging.Log('remote-user');
         isOnline: isOnline
       };
     }
+
     /**
      * Send the latest full state about everything in this user to the UI.
      * Only sends to UI if the user is ready to be visible. (has UserProfile)
@@ -400,7 +425,7 @@ var log :logging.Log = new logging.Log('remote-user');
     public notifyUI = () : void => {
       this.onceLoaded.then(() => {
         var state = this.currentStateForUI();
-        if (state) {
+        if (state) {  // state may be null if we don't yet have a user name.
           ui.connector.syncUser(state);
         }
       });
@@ -471,6 +496,15 @@ var log :logging.Log = new logging.Log('remote-user');
         this.profile.url = state.url;
       }
 
+      if (typeof state.status === 'undefined' &&
+          this.network.name === 'Cloud') {
+        this.profile.status = social.UserStatus.CLOUD_INSTANCE_SHARED_WITH_LOCAL;
+      } else if (typeof state.status === 'undefined') {
+        this.profile.status = social.UserStatus.FRIEND;
+      } else {
+        this.profile.status = state.status;
+      }
+
       // Restore all instances.
       var onceLoadedPromises :Promise<void>[] = [];
       for (var i in state.instanceIds) {
@@ -498,7 +532,8 @@ var log :logging.Log = new logging.Log('remote-user');
         imageData: this.profile.imageData,
         url: this.profile.url,
         instanceIds: Object.keys(this.instances_),
-        consent: this.consent
+        consent: this.consent,
+        status: this.profile.status
       });
     }
 
@@ -506,6 +541,14 @@ var log :logging.Log = new logging.Log('remote-user');
       for (var instanceId in this.instances_) {
         this.instances_[instanceId].handleLogout();
       }
+    }
+
+    public sendPermissionToken = (clientId :string, token :string) => {
+      var message = {
+        type: social.PeerMessageType.PERMISSION_TOKEN,
+        data: {token: token}
+      }
+      this.network.send(this, clientId, message);
     }
 
     public sendInstanceHandshake = (clientId :string) : Promise<void> => {
@@ -529,8 +572,10 @@ var log :logging.Log = new logging.Log('remote-user');
               isRequesting: this.consent.localRequestsAccessFromRemote,
               isOffering: this.consent.localGrantsAccessToRemote
             },
-            name: myInstance.userName,
-            userId: myInstance.userId,
+            // This is not yet used for encrypted networks like Quiver.
+            // TODO: once we have key verification, remove publicKey
+            // from Quiver instance messages if it's not used, e.g. if we
+            // use Quiver's userId (fingerprint) for verification instead.
             publicKey: globals.publicKey
           }
         };
@@ -572,8 +617,8 @@ var log :logging.Log = new logging.Log('remote-user');
         // stop the proxy session.
         if (uproxy_core_api.ConsentUserAction.CANCEL_OFFER === action) {
           for (var instanceId in this.instances_) {
-            if (this.instances_[instanceId].localSharingWithRemote ==
-                social.SharingState.SHARING_ACCESS) {
+            var instanceData = this.instances_[instanceId].currentStateForUi();
+            if (instanceData.localSharingWithRemote == social.SharingState.SHARING_ACCESS) {
               this.instances_[instanceId].stopShare();
             }
           }
@@ -604,6 +649,51 @@ var log :logging.Log = new logging.Log('remote-user');
         }
       }
       this.consent.remoteRequestsAccessFromLocal = false;
+    }
+
+    public handleInvitePermissions = (tokenObj ?:social.InviteTokenData) => {
+      var permission = tokenObj.permission;
+      if (!permission.isRequesting && !permission.isOffering) {
+        return;  // Nothing to do.
+      }
+
+      // Ensure that user name is set (in case this is a newly constructed
+      // user object).
+      if (!this.name || this.name === 'pending') {
+        this.name = tokenObj.userName;
+      }
+
+      // Get or create an instance
+      var instanceId = tokenObj.instanceId;
+      var instance = this.getInstance(instanceId);
+      if (!instance) {
+        // Create a simulated instance handshake using permission information
+        var handshake :social.InstanceHandshake = {
+          instanceId: instanceId,
+          consent: {
+            isOffering: permission.isOffering,
+            isRequesting: permission.isRequesting
+          }
+        };
+        instance = new remote_instance.RemoteInstance(this, instanceId);
+        this.instances_[instanceId] = instance;
+        // Assume lowest possible version until we get a real instance message.
+        instance.update(handshake, 1);
+      }
+
+      if (this.isInstanceOnline(instanceId)) {
+        var clientId = this.instanceToClient(instanceId);
+        this.sendPermissionToken(clientId, permission.token);
+      } else {
+        // save permission token so that we send it back next time we get
+        // an instance message from them.
+        instance.unusedPermissionToken = permission.token;
+      }
+
+      // Save user and instance to storage, notify UI
+      this.saveToStorage();
+      instance.saveToStorage();
+      this.notifyUI();
     }
 
   }  // class User

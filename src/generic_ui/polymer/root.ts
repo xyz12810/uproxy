@@ -1,36 +1,25 @@
 /// <reference path='./context.d.ts' />
 /// <reference path='../../../../third_party/polymer/polymer.d.ts' />
-/// <reference path='../../../../third_party/typings/xregexp/xregexp.d.ts' />
-/// <reference path='../../../../third_party/typings/i18next/i18next.d.ts' />
+/// <reference path='../../../../third_party/typings/browser.d.ts' />
 
 import social = require('../../interfaces/social');
 import ui_types = require('../../interfaces/ui');
 import user_interface = require('../scripts/ui');
 import user_module = require('../scripts/user');
-import regEx = require('xregexp');
-import XRegExp = regEx.XRegExp;
 
-// Example usage of these tests:
-// isRightToLeft.test('hi') --> false
-// isRightToLeft.test('لك الوص') --> true
-var isRightToLeft = XRegExp('[\\p{Arabic}\\p{Hebrew}]');
-var isCommonUnicode = XRegExp('[\\p{Common}]');
 var ui = ui_context.ui;
 var core = ui_context.core;
 var model = ui_context.model;
 var RTL_LANGUAGES :string[] = ['ar', 'fa', 'ur', 'he'];
 
-interface button_description {
-  text :string;
-  signal :string;
-  dismissive :boolean;
-}
-
-interface dialog_description {
-  heading :string;
-  message :string;
-  buttons: button_description[];
-}
+// Since we reuse a uproxy-action-dialog, sometimes there is a race condition
+// where the dialog attempts to open before it is properly closed.
+// We use a Promise to track if the dialog is closed.
+// The Promise is fulfilled by default, and also after a
+// "core-overlay-open-completed" event is observed.
+// The Promise is reset each time we open the dialog.
+var reusableDialogClosedPromise = Promise.resolve<void>();
+var fulfillReusableDialogClosed :Function;
 
 Polymer({
   dialog: {
@@ -41,30 +30,28 @@ Polymer({
   toastMessage: '',
   unableToGet: '',
   unableToShare: '',
-  updateView: function(e :Event, detail :{ view :ui_types.View }) {
+  viewChanged: function(oldView :ui_types.View, newView :ui_types.View) {
     // If we're switching from the SPLASH page to the ROSTER, fire an
     // event indicating the user has logged in. roster.ts listens for
     // this event.
-    if (detail.view == ui_types.View.ROSTER && ui.view == ui_types.View.SPLASH) {
-      this.fire('core-signal', {name: "login-success"});
-      if (!model.globalSettings.hasSeenWelcome) {
-        this.statsDialogOrBubbleOpen = true;
-        this.$.statsDialog.toggle();
-      }
+    if (newView == ui_types.View.ROSTER && oldView == ui_types.View.SPLASH) {
+      // TODO: can this be removed now that roster-before-login has launched?
+      this.fire('core-signal', {name: 'login-success'});
       this.closeSettings();
       this.$.modeTabs.updateBar();
+
+      // User has now seen the welcome messages - this used to be a
+      // uproxy-bubble, now the only welcome content is on the splash screen
+      // and the empty roster text.
+      model.globalSettings.hasSeenWelcome = true;
+      core.updateGlobalSettings(model.globalSettings);
     }
-    ui.view = detail.view;
   },
   statsIconClicked: function() {
     this.$.mainPanel.openDrawer();
   },
   closeSettings: function() {
     this.$.mainPanel.closeDrawer();
-  },
-  rosterView: function() {
-    console.log('rosterView called');
-    ui.view = ui_types.View.ROSTER;
   },
   setGetMode: function() {
     ui.setMode(ui_types.Mode.GET);
@@ -73,8 +60,6 @@ Polymer({
     ui.setMode(ui_types.Mode.SHARE);
   },
   closedWelcome: function() {
-    model.globalSettings.hasSeenWelcome = true;
-    core.updateGlobalSettings(model.globalSettings);
   },
   closedSharing: function() {
     model.globalSettings.hasSeenSharingEnabledScreen = true;
@@ -83,7 +68,7 @@ Polymer({
   dismissCopyPasteError: function() {
     ui.copyPasteError = ui_types.CopyPasteError.NONE;
   },
-  openDialog: function(e :Event, detail :dialog_description) {
+  openDialog: function(e :Event, detail :ui_types.DialogDescription) {
     /* 'detail' parameter holds the data that was passed when the open-dialog
      * signal was fired. It should be of the form:
      *
@@ -97,22 +82,67 @@ Polymer({
      * }
      */
 
+    if (detail.userInputData && detail.userInputData.initInputValue) {
+      this.$.dialogInput.value = detail.userInputData.initInputValue;
+    } else if (detail.displayData) {
+      this.$.dialogDisplay.value = detail.displayData;
+    } else {
+      this.$.dialogInput.value = '';
+    }
+    this.isUserInputInvalid = false;
+
+    // Set heading and message innerHTML so translations can include
+    // <p>, <a>, <strong>, etc tags.
+    this.injectBoundHTML(
+        ui.i18nSanitizeHtml(detail.heading), this.$.dialogHeading);
+    this.injectBoundHTML(
+        ui.i18nSanitizeHtml(detail.message), this.$.dialogMessage);
+
     this.dialog = detail;
     // Using async() allows the contents of the dialog to update before
     // it's opened. Opening the dialog too early causes it to be positioned
     // incorrectly (i.e. off center).
     this.async(() => {
-      this.$.dialog.open();
+      // Do not open the dialog until we are sure it is closed.
+      reusableDialogClosedPromise.then(() => {
+        reusableDialogClosedPromise = new Promise<void>((F, R) => {
+          fulfillReusableDialogClosed = F;
+        });
+        this.$.dialog.open();
+      });
     });
+  },
+  selectAll: function(e :Event, d :Object, input :HTMLInputElement) {
+    input.focus();
+    input.select();
+  },
+  reusableDialogClosed: function() {
+    fulfillReusableDialogClosed();
   },
   openProxyError: function() {
     this.$.proxyError.open();
   },
   dialogButtonClick: function(event :Event, detail :Object, target :HTMLElement) {
+    // Get userInput, or set to undefined if it is '', null, etc
+    var userInput = this.$.dialogInput.value || undefined;
+    if (this.dialog.userInputData && !userInput) {
+      // User did not enter any input, don't close
+      this.isUserInputInvalid = true;
+      return;
+    }
+
+    this.isUserInputInvalid = false;
+
+    var callbackIndex = parseInt(target.getAttribute('data-callbackIndex'), 10);
+    if (callbackIndex) {
+      var fulfill = (target.getAttribute('affirmative') != null);
+      ui.invokeConfirmationCallback(callbackIndex, fulfill, userInput);
+    }
     var signal = target.getAttribute('data-signal');
     if (signal) {
       this.fire('core-signal', { name: signal });
     }
+    this.$.dialog.close();
   },
   ready: function() {
     // Expose global ui object and UI module in this context.
@@ -125,35 +155,15 @@ Polymer({
       var browserCustomElement = document.createElement(ui.browserApi.browserSpecificElement);
       this.$.browserElementContainer.appendChild(browserCustomElement);
     }
-    if (ui.view == ui_types.View.ROSTER &&
-        !model.globalSettings.hasSeenWelcome) {
-      this.statsDialogOrBubbleOpen = true;
-      this.$.statsDialog.open();
-    }
     this.updateDirectionality();
-  },
-  closeStatsBubble: function() {
-    this.statsDialogOrBubbleOpen = false;
-  },
-  enableStats: function() {
-    // TODO: clean up the logic which controls which welcome dialog or bubble
-    // is shown.
-    this.model.globalSettings.statsReportingEnabled = true;
-  },
-  disableStats: function() {
-    this.model.globalSettings.statsReportingEnabled = false;
-    this.statsDialogOrBubbleOpen = false;
   },
   tabSelected: function(e :Event) {
     if (this.ui.isSharingDisabled &&
         this.model.globalSettings.mode == ui_types.Mode.SHARE) {
       // Keep the mode on get and display an error dialog.
       this.ui.setMode(ui_types.Mode.GET);
-      this.fire('open-dialog', {
-        heading: ui.i18n_t("SHARING_UNAVAILABLE_TITLE"),
-        message: ui.i18n_t("SHARING_UNAVAILABLE_MESSAGE"),
-        buttons: [{text: ui.i18n_t("CLOSE"), dismissive: true}]
-      });
+      ui.showDialog(ui.i18n_t('SHARING_UNAVAILABLE_TITLE'),
+          ui.i18n_t('SHARING_UNAVAILABLE_MESSAGE'), ui.i18n_t('CLOSE'));
     } else {
       // setting the value is taken care of in the polymer binding, we just need
       // to sync the value to core
@@ -162,12 +172,11 @@ Polymer({
   },
   signalToFireChanged: function() {
     if (ui.signalToFire) {
-      this.fire('core-signal', {name: ui.signalToFire});
-      ui.signalToFire = '';
+      this.fire('core-signal', { name: ui.signalToFire.name, data: ui.signalToFire.data });
     }
   },
   revertProxySettings: function() {
-    this.ui.stopUsingProxy();
+    this.ui.stopUsingProxy(true);
   },
   restartProxying: function() {
     this.ui.restartProxying();
@@ -187,15 +196,15 @@ Polymer({
   },
   openTroubleshoot: function() {
     if (this.ui.unableToGet) {
-      this.troubleshootTitle = ui.i18n_t("UNABLE_TO_GET");
+      this.troubleshootTitle = ui.i18n_t('UNABLE_TO_GET');
     } else {
-      this.troubleshootTitle = ui.i18n_t("UNABLE_TO_SHARE");
+      this.troubleshootTitle = ui.i18n_t('UNABLE_TO_SHARE');
     }
     this.$.toast.dismiss();
     this.fire('core-signal', {name: 'open-troubleshoot'});
   },
   topOfStatuses: function(statusHeight: number, visible :boolean) {
-    return 10 + (visible ? statusHeight : 0);
+    return visible ? statusHeight : 0;
   },
   // mainPanel.selected can be either "drawer" or "main"
   // Our "drawer" is the settings panel. When the settings panel is open,
@@ -238,9 +247,13 @@ Polymer({
   restart: function() {
     core.restart();
   },
+  fireOpenInviteUserPanel: function() {
+    this.fire('core-signal', { name: 'open-invite-user-dialog' });
+  },
   observe: {
-    '$.mainPanel.selected' : 'drawerToggled',
+    '$.mainPanel.selected': 'drawerToggled',
     'ui.toastMessage': 'toastMessageChanged',
+    'ui.view': 'viewChanged',
     // Use an observer on model.contacts.shareAccessContacts.trustedUproxy
     // so that we can detect any time elements are added or removed from this
     // array.  Unfortunately if we try doing
@@ -250,5 +263,8 @@ Polymer({
         'updateIsSharingEnabledWithOthers',
     'ui.signalToFire': 'signalToFireChanged',
     'model.globalSettings.language': 'languageChanged'
-  }
+  },
+  computed: {
+    'hasContacts': '(model.contacts.getAccessContacts.pending.length + model.contacts.getAccessContacts.trustedUproxy.length + model.contacts.getAccessContacts.untrustedUproxy.length + model.contacts.shareAccessContacts.pending.length + model.contacts.shareAccessContacts.trustedUproxy.length + model.contacts.shareAccessContacts.untrustedUproxy.length) > 0',
+   }
 });

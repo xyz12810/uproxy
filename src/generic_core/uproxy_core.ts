@@ -1,23 +1,28 @@
-/// <reference path='../../../third_party/freedom-typings/port-control.d.ts' />
+/// <reference path='../../../third_party/typings/browser.d.ts' />
 
+import bridge = require('../lib/bridge/bridge');
 import globals = require('./globals');
-import logging = require('../../../third_party/uproxy-lib/logging/logging');
-import loggingTypes = require('../../../third_party/uproxy-lib/loggingprovider/loggingprovider.types');
-import nat_probe = require('../../../third_party/uproxy-lib/nat/probe');
-import net = require('../../../third_party/uproxy-lib/net/net.types');
+import _ = require('lodash');
+import logging = require('../lib/logging/logging');
+import loggingTypes = require('../lib/loggingprovider/loggingprovider.types');
+import net = require('../lib/net/net.types');
+import onetime = require('../lib/bridge/onetime');
+import nat_probe = require('../lib/nat/probe');
 import remote_connection = require('./remote-connection');
 import remote_instance = require('./remote-instance');
-import social = require('../interfaces/social');
+import user = require('./remote-user');
 import social_network = require('./social');
-import storage = globals.storage;
+import social = require('../interfaces/social');
+import StoredValue = require('./stored_value');
 import ui_connector = require('./ui_connector');
 import uproxy_core_api = require('../interfaces/uproxy_core_api');
-import user = require('./remote-user');
-import version = require('../version/version');
-import StoredValue = require('./stored_value');
-import _ = require('lodash');
+import version = require('../generic/version');
+import freedomXhr = require('freedom-xhr');
 
 import ui = ui_connector.connector;
+import storage = globals.storage;
+
+declare var freedom: freedom.FreedomInModuleEnv;
 
 // This is a global instance of RemoteConnection that is currently used for
 // either sharing or using a proxy through the copy+paste interface (i.e.
@@ -38,14 +43,71 @@ loggingController.setDefaultFilter(
 
 var portControl = globals.portControl;
 
+// Prefix for freedomjs modules which interface with cloud computing providers.
+const CLOUD_PROVIDER_MODULE_NAME_PREFIX: string = 'CLOUDPROVIDER-';
+const CLOUD_PROVIDER_NAME = 'digitalocean';
+const CLOUD_PROVIDER_MODULE_NAME = CLOUD_PROVIDER_MODULE_NAME_PREFIX + CLOUD_PROVIDER_NAME;
+const CLOUD_INSTALLER_MODULE_NAME = 'cloudinstall';
+
+const getCloudProviderNames = (): string[] => {
+  let results: string[] = [];
+  for (var dependency in freedom) {
+    if (freedom.hasOwnProperty(dependency) &&
+        dependency.indexOf(CLOUD_PROVIDER_MODULE_NAME_PREFIX) === 0) {
+      results.push(dependency.substr(CLOUD_PROVIDER_MODULE_NAME_PREFIX.length));
+    }
+  }
+  return results;
+};
+
+// This is the name recommended by the blog post.
+const CLOUD_DROPLET_NAME = 'uproxy-cloud-server';
+
+// Percentage of cloud install progress devoted to deploying.
+// The remainder is devoted to the install script.
+const CLOUD_DEPLOY_PROGRESS = 20;
+
+// Invokes f with an instance of the specified freedomjs module.
+// The module instance will be destroyed before the function resolves
+// or rejects. Intended for use with heavy-weight modules such as
+// those used for cloud.
+function oneShotModule_<T>(moduleName: string, f: (provider: any) => Promise<T>): Promise<T> {
+  try {
+    const m = freedom[moduleName]();
+    log.debug('created ' + moduleName + ' module');
+
+    const destructor = () => {
+      try {
+        freedom[moduleName].close(m);
+        log.debug('destroyed ' + moduleName + ' module');
+      } catch (e) {
+        log.debug('error destroying ' + moduleName + ' module: ' + e.message);
+      }
+    };
+
+    try {
+      return f(m).then((result: T) => {
+        destructor();
+        return result;
+      }, (e: Error) => {
+        destructor();
+        throw e;
+      });
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  } catch (e) {
+    return Promise.reject(new Error('error creating ' + moduleName + ' module: ' + e.message));
+  }
+}
+
 /**
  * Primary uProxy backend. Handles which social networks one is connected to,
  * sends updates to the UI, and handles commands from the UI.
  */
 export class uProxyCore implements uproxy_core_api.CoreApi {
 
-  private copyPasteSharingMessages_ :social.PeerMessage[] = [];
-  private copyPasteGettingMessages_ :social.PeerMessage[] = [];
+  private batcher_ : onetime.SignalBatcher<social.PeerMessage>;
 
   // this should be set iff an update to the core is available
   private availableVersion_ :string = null;
@@ -54,38 +116,32 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
 
   constructor() {
     log.debug('Preparing uProxy Core');
-    copyPasteConnection = new remote_connection.RemoteConnection((update :uproxy_core_api.Update, message?:any) => {
+    copyPasteConnection = new remote_connection.RemoteConnection(
+        (update:uproxy_core_api.Update, message?:social.PeerMessage) => {
       if (update !== uproxy_core_api.Update.SIGNALLING_MESSAGE) {
         ui.update(update, message);
-        return;
+      } else {
+        this.batcher_.addToBatch(message);
       }
-
-      var data :social.PeerMessage[];
-      switch (message.type) {
-        case social.PeerMessageType.SIGNAL_FROM_CLIENT_PEER:
-          data = this.copyPasteGettingMessages_;
-          break;
-        case social.PeerMessageType.SIGNAL_FROM_SERVER_PEER:
-          data = this.copyPasteSharingMessages_;
-          break;
-      }
-      data.push(message);
-
-      ui.update(uproxy_core_api.Update.COPYPASTE_MESSAGE, {
-        type: message.type,
-        data: data
-      });
     }, undefined, portControl);
 
     this.refreshPortControlSupport();
 
-    this.connectedNetworks_.get().then((networks :string[]) => {
+    globals.loadSettings.then(() => {
+      return this.connectedNetworks_.get();
+    }).then((networks :string[]) => {
       var logins :Promise<void>[] = [];
 
       for (var i in networks) {
+        var networkName = networks[i]
+        if (!(networkName in social_network.networks)) {
+          // Network may have been removed, e.g. old "Facebook" network is now
+          // "Facebook-Firebase-V2".
+          continue;
+        }
         logins.push(this.login({
-          network: networks[i],
-          reconnect: true,
+          network: networkName,
+          loginType: uproxy_core_api.LoginType.RECONNECT
         }).catch(() => {
           // any failure to login should just be ignored - the user will either
           // be logged in with just some accounts or still on the login screen
@@ -123,7 +179,7 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
   /**
    * Access various social networks using the Social API.
    */
-  public login = (loginArgs :uproxy_core_api.LoginArgs) :Promise<void> => {
+  public login = (loginArgs :uproxy_core_api.LoginArgs) :Promise<uproxy_core_api.LoginResult> => {
     var networkName = loginArgs.network;
 
     if (!(networkName in social_network.networks)) {
@@ -133,26 +189,32 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
 
     var network = this.pendingNetworks_[networkName];
     if (typeof network === 'undefined') {
-      network = new social_network.FreedomNetwork(networkName);
+      network = new social_network.FreedomNetwork(networkName, globals.metrics);
       this.pendingNetworks_[networkName] = network;
     }
 
-    return network.login(loginArgs.reconnect).then(() => {
+    return network.login(loginArgs.loginType, loginArgs.userName).then(() => {
       delete this.pendingNetworks_[networkName];
       log.info('Successfully logged in to network', {
         network: networkName,
         userId: network.myInstance.userId
       });
 
+      // Save network to storage so we can reconnect on restart.
       return this.connectedNetworks_.get().then((networks :string[]) => {
         if (_.includes(networks, networkName)) {
           return;
         }
-
         networks.push(networkName);
         return this.connectedNetworks_.set(networks);
       }).catch((e) => {
         console.warn('Could not save connected networks', e);
+      }).then(() => {
+        // Fulfill login's returned promise with uproxy_core_api.LoginResult.
+        return {
+          userId: network.myInstance.userId,
+          instanceId: network.myInstance.instanceId
+        }
       });
     }, (e) => {
       delete this.pendingNetworks_[networkName];
@@ -166,8 +228,13 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
    */
   public logout = (networkInfo :social.SocialNetworkInfo) : Promise<void> => {
     var networkName = networkInfo.name;
-    var userId = networkInfo.userId;
-    var network = social_network.getNetwork(networkName, userId);
+    if (networkInfo.userId) {
+      const userId = networkInfo.userId;
+      var network = social_network.getNetwork(networkName, userId);
+    } else {
+      var network = this.getNetworkByName_(networkName);
+    }
+
     if (null === network) {
       log.warn('Could not logout of network', networkName);
       return;
@@ -188,7 +255,7 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
 
   // onUpdate not needed in the real core.
   onUpdate = (update:uproxy_core_api.Update, handler:Function) => {
-    throw "uproxy_core onUpdate not implemented.";
+    throw 'uproxy_core onUpdate not implemented.';
   }
 
   /**
@@ -202,22 +269,29 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
     if (newSettings.stunServers.length === 0) {
       newSettings.stunServers = globals.DEFAULT_STUN_SERVERS;
     }
+    var oldDescription = globals.settings.description;
     globals.storage.save('globalSettings', newSettings)
       .catch((e) => {
         log.error('Could not save globalSettings to storage', e.stack);
       });
 
-    // Clear the existing servers and add in each new server.
-    // Trying globalSettings = newSettings does not correctly update
-    // pre-existing references to stunServers (e.g. from RemoteInstances).
-    globals.settings.stunServers
-        .splice(0, globals.settings.stunServers.length);
-    for (var i = 0; i < newSettings.stunServers.length; ++i) {
-      globals.settings.stunServers.push(newSettings.stunServers[i]);
-    }
+    _.merge(globals.settings, newSettings, (a :Object, b :Object) => {
+        // ensure we do not merge the arrays and that the reference remains intact
+        if (_.isArray(a) && _.isArray(b)) {
+          var arrayA = <Object[]>a;
+          arrayA.splice(0, arrayA.length);
+          var arrayB = <Object[]>b;
+          for (var i in b) {
+            arrayA.push(arrayB[parseInt(i)]);
+          }
+          return a;
+        }
 
-    if (newSettings.description != globals.settings.description) {
-      globals.settings.description = newSettings.description;
+        // this causes us to fall back to the default merge behaviour
+        return undefined;
+    });
+
+    if (globals.settings.description !== oldDescription) {
       // Resend instance info to update description for logged in networks.
       for (var networkName in social_network.networks) {
         for (var userId in social_network.networks[networkName]) {
@@ -226,34 +300,22 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
       }
     }
 
-    globals.settings.hasSeenSharingEnabledScreen =
-        newSettings.hasSeenSharingEnabledScreen;
-    globals.settings.hasSeenWelcome = newSettings.hasSeenWelcome;
-    globals.settings.allowNonUnicast = newSettings.allowNonUnicast;
-    globals.settings.mode = newSettings.mode;
-    globals.settings.statsReportingEnabled = newSettings.statsReportingEnabled;
-    globals.settings.splashState = newSettings.splashState;
-    globals.settings.consoleFilter = newSettings.consoleFilter;
     loggingController.setDefaultFilter(
       loggingTypes.Destination.console,
       globals.settings.consoleFilter);
-    globals.settings.language = newSettings.language;
-    globals.settings.force_message_version = newSettings.force_message_version;
   }
 
   public getFullState = () :Promise<uproxy_core_api.InitialState> => {
     return globals.loadSettings.then(() => {
+      var copyPasteConnectionState = copyPasteConnection.getCurrentState();
+
       return {
         networkNames: Object.keys(social_network.networks),
+        cloudProviderNames: getCloudProviderNames(),
         globalSettings: globals.settings,
         onlineNetworks: social_network.getOnlineNetworks(),
         availableVersion: this.availableVersion_,
-        copyPasteState: {
-          connectionState: copyPasteConnection.getCurrentState(),
-          endpoint: copyPasteConnection.activeEndpoint,
-          gettingMessages: this.copyPasteGettingMessages_,
-          sharingMessages: this.copyPasteSharingMessages_
-        },
+        copyPasteConnection: copyPasteConnectionState,
         portControlSupport: this.portControlSupport_,
       };
     });
@@ -276,8 +338,22 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
     user.modifyConsent(command.action);
   }
 
+  // Resets the copy/paste signal batcher.
+  private resetBatcher_ = () : void => {
+    this.batcher_ = new onetime.SignalBatcher<social.PeerMessage>((signal:string) => {
+      ui.update(uproxy_core_api.Update.ONETIME_MESSAGE, signal);
+    }, (signal:social.PeerMessage) => {
+      // This is a terminating message iff signal.data is an instance
+      // bridge.SignallingMessage (which we can detect by the presence
+      // of a signals field) for which bridge.isTerminatingSignal
+      // returns true.
+      return signal.data && (<any>signal.data).signals &&
+        bridge.isTerminatingSignal(<bridge.SignallingMessage>signal.data);
+    }, true);
+  }
+
   public startCopyPasteGet = () : Promise<net.Endpoint> => {
-    this.copyPasteGettingMessages_ = [];
+    this.resetBatcher_();
     return copyPasteConnection.startGet(globals.effectiveMessageVersion());
   }
 
@@ -286,7 +362,7 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
   }
 
   public startCopyPasteShare = () => {
-    this.copyPasteSharingMessages_ = [];
+    this.resetBatcher_();
     copyPasteConnection.startShare(globals.effectiveMessageVersion());
   }
 
@@ -294,8 +370,54 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
     return copyPasteConnection.stopShare();
   }
 
-  public sendCopyPasteSignal = (signal :social.PeerMessage) => {
-    copyPasteConnection.handleSignal(signal);
+  public sendCopyPasteSignal = (signal:string) => {
+    var decodedSignals = <social.PeerMessage[]>onetime.decode(signal);
+    decodedSignals.forEach(copyPasteConnection.handleSignal);
+  }
+
+  public inviteGitHubUser = (data :uproxy_core_api.CreateInviteArgs): Promise<void> => {
+    var network = social_network.networks[data.network.name][data.network.userId];
+    return network.inviteGitHubUser(data);
+  }
+
+  public acceptInvitation = (data :uproxy_core_api.AcceptInvitationData) : Promise<void> => {
+    var networkName = data.network.name;
+    var networkUserId = data.network.userId;
+    if (!networkUserId) {
+      // Take the first key in the userId to social network map as the current user.
+      // Assumes the user is only signed in once to any given network.
+      networkUserId = Object.keys(social_network.networks[networkName])[0];
+    }
+    var network = social_network.getNetwork(networkName, networkUserId);
+    return network.acceptInvitation(data.tokenObj, data.userId);
+  }
+
+  public getInviteUrl = (data :uproxy_core_api.CreateInviteArgs): Promise<string> => {
+    var network = social_network.networks[data.network.name][data.network.userId];
+    return network.getInviteUrl(data);
+  }
+
+  public sendEmail = (data :uproxy_core_api.EmailData) : void => {
+    var networkInfo = data.networkInfo;
+    var network = social_network.networks[networkInfo.name][networkInfo.userId];
+    network.sendEmail(data.to, data.subject, data.body);
+  }
+
+  public postReport = (args :uproxy_core_api.PostReportArgs) : Promise<void> => {
+    let host = 'd1wtwocg4wx1ih.cloudfront.net';
+    let front = 'https://a0.awsstatic.com/';
+    let request:XMLHttpRequest = new freedomXhr.auto();
+    return new Promise<any>((F, R) => {
+      request.onload = F;
+      request.onerror = R;
+      // Only the front domain is exposed on the wire. The host and path
+      // should be encrypted. The path needs to be here and not
+      // in the Host header, which can only take a host name.
+      request.open('POST', front + args.path, true);
+      // The true destination address is set as the Host in the header.
+      request.setRequestHeader('Host', host);
+      request.send(JSON.stringify(args.payload));
+    });
   }
 
   /**
@@ -325,20 +447,6 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
     }
     remote.stop();
     // TODO: Handle revoked permissions notifications.
-  }
-
-  public handleManualNetworkInboundMessage =
-      (command :social.HandleManualNetworkInboundMessageCommand) => {
-    var manualNetwork :social_network.ManualNetwork =
-        <social_network.ManualNetwork> social_network.getNetwork(
-            social_network.MANUAL_NETWORK_ID, '');
-    if (!manualNetwork) {
-      log.error('Manual network does not exist, discarding inbound message',
-                command);
-      return;
-    }
-
-    manualNetwork.receive(command.senderClientId, command.message);
   }
 
   /**
@@ -413,7 +521,7 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
               uproxy_core_api.PortControlSupport.PENDING);
 
     return portControl.probeProtocolSupport().then(
-      (probe:freedom_PortControl.ProtocolSupport) => {
+      (probe:freedom.PortControl.ProtocolSupport) => {
         this.portControlSupport_ = (probe.natPmp || probe.pcp || probe.upnp) ?
                                    uproxy_core_api.PortControlSupport.TRUE :
                                    uproxy_core_api.PortControlSupport.FALSE;
@@ -435,7 +543,7 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
     return this.getNatType().then((natType:string) => {
       natInfo.natType = natType;
       return portControl.probeProtocolSupport().then(
-        (probe:freedom_PortControl.ProtocolSupport) => {
+        (probe:freedom.PortControl.ProtocolSupport) => {
           natInfo.pmpSupport = probe.natPmp;
           natInfo.pcpSupport = probe.pcp;
           natInfo.upnpSupport = probe.upnp;
@@ -510,7 +618,7 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
         var escapedRegex = new RegExp(
             // Escape all special regex characters, from
             // http://stackoverflow.com/questions/3446170/
-            value.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&"),
+            value.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, '\\$&'),
             'g');
         text = text.replace(escapedRegex, prefix + index);
         ++index;
@@ -565,5 +673,158 @@ export class uProxyCore implements uproxy_core_api.CoreApi {
   public handleUpdate = (details :{version :string}) => {
     this.availableVersion_ = details.version;
     ui.update(uproxy_core_api.Update.CORE_UPDATE_AVAILABLE, details);
+  }
+
+  public cloudUpdate = (args: uproxy_core_api.CloudOperationArgs): Promise<void> => {
+    if (args.providerName !== CLOUD_PROVIDER_NAME) {
+      return Promise.reject(new Error('unsupported cloud provider'));
+    }
+
+    switch (args.operation) {
+      case uproxy_core_api.CloudOperationType.CLOUD_INSTALL:
+        if (!args.region) {
+          return Promise.reject(new Error('no region specified for cloud provider'));
+        }
+        return this.createCloudServer_(args.region);
+      case uproxy_core_api.CloudOperationType.CLOUD_DESTROY:
+        return this.destroyCloudServer_();
+      case uproxy_core_api.CloudOperationType.CLOUD_REBOOT:
+        return this.rebootCloudServer_();
+      default:
+        return Promise.reject(new Error('cloud operation not supported'));
+    }
+  }
+
+  private createCloudServer_ = (region: string) => {
+    log.debug('creating cloud server in %1', region);
+
+    // Since this step can take a while, start >0 so there's less confusion
+    // that this is a progress bar.
+    ui.update(uproxy_core_api.Update.CLOUD_INSTALL_STATUS, 'CLOUD_INSTALL_STATUS_CREATING_SERVER');
+    ui.update(uproxy_core_api.Update.CLOUD_INSTALL_PROGRESS, CLOUD_DEPLOY_PROGRESS / 2);
+
+    return this.loginIfNeeded_('Cloud').then((cloudNetwork) => {
+      return oneShotModule_(CLOUD_PROVIDER_MODULE_NAME, (provider: any) => {
+        return provider.start(CLOUD_DROPLET_NAME, region);
+      }).catch((e: any) => {
+        if (e.errcode === 'VM_AE') {
+          // This string has special meaning for the polymer template.
+          return Promise.reject(new Error('server already exists'));
+        } else {
+          return Promise.reject(e);
+        }
+      }).then((serverInfo: any) => {
+        const host = serverInfo.network.ipv4;
+        const port = serverInfo.network.ssh_port;
+
+        log.debug('installing cloud on new droplet at %1:%2 (server details: %3)', host, port, serverInfo);
+
+        ui.update(uproxy_core_api.Update.CLOUD_INSTALL_PROGRESS, CLOUD_DEPLOY_PROGRESS);
+        ui.update(uproxy_core_api.Update.CLOUD_INSTALL_STATUS, 'CLOUD_INSTALL_STATUS_LOGGING_IN');
+
+        return oneShotModule_(CLOUD_INSTALLER_MODULE_NAME, (installer: any) => {
+          installer.on('status', (status: number) => {
+            ui.update(uproxy_core_api.Update.CLOUD_INSTALL_STATUS, status);
+          });
+
+          installer.on('progress', (progress: number) => {
+            ui.update(uproxy_core_api.Update.CLOUD_INSTALL_PROGRESS,
+              CLOUD_DEPLOY_PROGRESS + (progress * ((100 - CLOUD_DEPLOY_PROGRESS) / 100)));
+          });
+
+          return installer.install(host, port, 'root', serverInfo.ssh.private);
+        }).then((cloudNetworkData: any) => {
+          // Set flag so Cloud social provider knows this invite is for the admin
+          // user, who just created the server.
+          cloudNetworkData['isAdmin'] = true;
+
+          // We cast to any because InviteTokenData currently has a required userName
+          // field which is unused by the cloud social provider.
+          // TODO: what if this fails?
+          return cloudNetwork.acceptInvitation(<any>{
+            v: 2,
+            networkName: 'Cloud',
+            networkData: JSON.stringify(cloudNetworkData)
+          });
+        });
+      });
+    });
+  }
+
+  private destroyCloudServer_ = () => {
+    log.debug('destroying cloud server');
+    return oneShotModule_<void>(CLOUD_PROVIDER_MODULE_NAME, (provider: any) => {
+      return provider.stop(CLOUD_DROPLET_NAME);
+    });
+  }
+
+  private rebootCloudServer_ = () => {
+    log.debug('rebooting cloud server');
+    return oneShotModule_<void>(CLOUD_PROVIDER_MODULE_NAME, (provider: any) => {
+      return provider.reboot(CLOUD_DROPLET_NAME);
+    });
+  }
+
+  // Gets a social.Network, and logs the user in if they aren't yet logged in.
+  private loginIfNeeded_ = (networkName :string) : Promise<social.Network> => {
+    let network = this.getNetworkByName_(networkName);
+    if (network) {
+      return Promise.resolve(network);
+    }
+
+    // User is not yet logged in.
+    return this.login({
+      network: networkName,
+      loginType: uproxy_core_api.LoginType.INITIAL
+    }).then(() => {
+      return this.getNetworkByName_(networkName);
+    });
+  }
+
+  // The social_network module in theory should support multiple userIds
+  // being logged into the same network.  However that has never been tested
+  // and is not used by the rest of uProxy code.  This method just returns
+  // the first (and currently only) network for the given networkName, or null
+  // if the network is not logged in.
+  private getNetworkByName_ = (networkName :string) : social.Network => {
+    for (var userId in social_network.networks[networkName]) {
+      return social_network.networks[networkName][userId];
+    }
+    return null;
+  }
+
+  public updateOrgPolicy(policy :uproxy_core_api.ManagedPolicyUpdate) :void {
+    globals.settings.enforceProxyServerValidity = policy.
+      enforceProxyServerValidity;
+    globals.settings.validProxyServers = policy.validProxyServers;
+    this.updateGlobalSettings(globals.settings);
+  }
+
+  // Remove contact from friend list and storage
+  public removeContact = (args :uproxy_core_api.RemoveContactArgs) : Promise<void> => {
+    log.info('removeContact', args);
+    const network = this.getNetworkByName_(args.networkName);
+    return network.removeUserFromStorage(args.userId).then(() => {
+      return ui.removeFriend({
+        networkName: args.networkName,
+        userId: args.userId
+      });
+    }).then(() => {
+      // If we removed the only cloud friend, logout of the cloud network
+      if (args.networkName === 'Cloud') {
+        return this.logoutIfRosterEmpty_(network);
+      }
+    });
+  }
+
+  private logoutIfRosterEmpty_ = (network :social.Network) : Promise<void> => {
+    if (Object.keys(network.roster).length === 0) {
+      return this.logout({
+       name: network.name
+      }).then(() => {
+        log.info('Successfully logged out of %1 network because roster is empty', network.name);
+      });
+    }
+    return Promise.resolve<void>();
   }
 }  // class uProxyCore

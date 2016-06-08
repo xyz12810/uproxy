@@ -1,0 +1,251 @@
+<link rel='import' href='../../bower/polymer/polymer.html'>
+<link rel='import' href='../../bower/paper-checkbox/paper-checkbox.html'>
+<link rel='import' href='../../bower/core-label/core-label.html'>
+<link rel='import' href='../../bower/core-tooltip/core-tooltip.html'>
+<link rel='import' href='../../bower/core-overlay/core-overlay.html'>
+<link rel='import' href='../../bower/core-signals/core-signals.html'>
+<link rel='import' href='dialog.html'>
+
+<polymer-element name='uproxy-faq' attributes=''>
+  <template>
+    <style>
+    :host {
+      text-align: center;
+      font-color: #12A391;  /* dark green */
+    }
+    #header {
+      margin: 20px 0px;
+    }
+    .uproxy-title {
+      font-family: "Quicksand", sans-serif;
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: -1px;
+      margin-bottom: 1em;
+    }
+    .light {
+      color: #10c9b1;
+    }
+    uproxy-app-bar {
+      text-align: left;
+      font-size: 18px;
+    }
+    #faqPanel {
+      height: 100%;
+      width: 100%;
+      background-color: white;
+    }
+    #container {
+      height: 100%;
+    }
+    #contentContainer {
+      padding: 30px;
+      text-align: start;
+      color: #12A391;
+      overflow: auto;
+    }
+    .content {
+      text-align: center;
+    }
+    li {
+      list-style-type: none;
+      padding: 4px 0px;
+    }
+    a {
+      color: #333 !important;
+      cursor: pointer;
+    }
+    p {
+      color: #909090;
+    }
+    ul {
+      padding: 0;
+    }
+    section {
+      margin: 50px 0px;
+    }
+    </style>
+
+    <!-- Listen for the 'open-faq' event, which is fired by the settings and splash pages. -->
+    <core-signals on-core-signal-open-faq="{{ open }}"></core-signals>
+
+    <core-overlay id='faqPanel' on-core-overlay-open-completed="{{scrollAfterOpening}}">
+      <div id='container' vertical layout>
+        <uproxy-app-bar on-go-back='{{ close }}'>
+          {{ "FAQ_SENTENCE_CASE" | $$ }}
+        </uproxy-app-bar>
+        <div id='contentContainer' flex>
+          <div class="content">
+            <section id="header">
+              <img src="../../icons/uproxy_logo.svg" alt="uProxy Logo" height="140" width="140" />
+              <h1 class="uproxy-title"><span class="light">u</span>Proxy FAQ</h1>
+            </section>
+          </div>
+
+          <div>
+            <section class="faq" id="links">
+              <ul class="links left">
+                <li><a data-anchor="whatIsUproxy" on-tap="{{scroll}}" class="i18n" data-i18n="WHAT_IS_UPROXY"></a></li>
+                <li><a data-anchor="whereToGet" on-tap="{{scroll}}" class="i18n" data-i18n="WHERE_TO_GET"></a></li>
+                <li><a data-anchor="whatDoGetAccess" on-tap="{{scroll}}" class="i18n" data-i18n="WHAT_DO_GET_ACCESS"></a></li>
+                <li><a data-anchor="whyDoesUproxyConnect" on-tap="{{scroll}}" class="i18n" data-i18n="WHY_DOES_UPROXY_CONNECT"></a></li>
+                <li><a data-anchor="howDoIFind" on-tap="{{scroll}}" class="i18n" data-i18n="HOW_DO_I_FIND"></a></li>
+                <li><a data-anchor="whatIsGitHub" on-tap="{{scroll}}" class="i18n" data-i18n="WHAT_IS_GITHUB"></a></li>
+                <li><a data-anchor="whenIAmSharingAccess" on-tap="{{scroll}}" class="i18n" data-i18n="WHEN_I_AM_SHARING_ACCESS"></a></li>
+                <li><a data-anchor="willUproxyWork" on-tap="{{scroll}}" class="i18n" data-i18n="WILL_UPROXY_WORK"></a></li>
+                <li><a data-anchor="howDoesUproxyHelp" on-tap="{{scroll}}" class="i18n" data-i18n="HOW_DOES_UPROXY_HELP"></a></li>
+                <li><a data-anchor="whyIsItImportant" on-tap="{{scroll}}" class="i18n" data-i18n="WHY_IS_IT_IMPORTANT"></a></li>
+                <li><a data-anchor="doesUproxyLogData" on-tap="{{scroll}}" class="i18n" data-i18n="DOES_UPROXY_LOG_DATA"></a></li>
+                <li><a data-anchor="doesUproxyGiveMe" on-tap="{{scroll}}" class="i18n" data-i18n="DOES_UPROXY_GIVE_ME"></a></li>
+                <li><a data-anchor="whatIsntProxied" on-tap="{{scroll}}" class="i18n" data-i18n="WHAT_ISNT_PROXIED"></a></li>
+                <li><a data-anchor="whoKnowsThat" on-tap="{{scroll}}" class="i18n" data-i18n="WHO_KNOWS_THAT"></a></li>
+                <li><a data-anchor="doesUproxyProtect" on-tap="{{scroll}}" class="i18n" data-i18n="DOES_UPROXY_PROTECT"></a></li>
+                <li><a data-anchor="whyIsUproxyAsking" on-tap="{{scroll}}" class="i18n" data-i18n="WHY_IS_UPROXY_ASKING"></a></li>
+                <li><a data-anchor="whatIsPortControl" on-tap="{{scroll}}" class="i18n" data-i18n="WHAT_IS_PORT_CONTROL"></a></li>
+                <li><a data-anchor="howDoesUproxyCompare" on-tap="{{scroll}}" class="i18n" data-i18n="HOW_DOES_UPROXY_COMPARE"></a></li>
+                <li><a data-anchor="whoMadeUproxy" on-tap="{{scroll}}" class="i18n" data-i18n="WHO_MADE_UPROXY"></a></li>
+                <li><a data-anchor="whatIsBeta" on-tap="{{scroll}}" class="i18n" data-i18n="WHAT_IS_BETA"></a></li>
+                <li><a data-anchor="howDoISubmit" on-tap="{{scroll}}" class="i18n" data-i18n="HOW_DO_I_SUBMIT"></a></li>
+                <li><a data-anchor="howDoInstallUproxyOnServer" on-tap="{{scroll}}" class="i18n" data-i18n="HOW_DO_I_INSTALL_UPROXY_ON_SERVER"></a></li>
+                <li><a data-anchor="whatIsDigitalOcean" on-tap="{{scroll}}" class="i18n" data-i18n="WHAT_IS_DIGITAL_OCEAN"></a></li>
+                <li><a data-anchor="whatAreCloudServers" on-tap="{{scroll}}" class="i18n" data-i18n="WHAT_ARE_CLOUD_SERVERS"></a></li>
+              </ul>
+            </section>
+
+            <section class="faq" id="whatIsUproxy">
+              <h2 class="i18n" data-i18n="WHAT_IS_UPROXY"></h2>
+              <p class="i18n" data-i18n="WHAT_IS_UPROXY_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whereToGet">
+              <h2 class="i18n" data-i18n="WHERE_TO_GET"></h2>
+              <p class="i18n" data-i18n="WHERE_TO_GET_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whatDoGetAccess">
+              <h2 class="i18n" data-i18n="WHAT_DO_GET_ACCESS"></h2>
+              <p class="i18n" data-i18n="WHAT_DO_GET_ACCESS_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whyDoesUproxyConnect">
+              <h2 class="i18n" data-i18n="WHY_DOES_UPROXY_CONNECT"></h2>
+              <p class="i18n" data-i18n="WHY_DOES_UPROXY_CONNECT_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="howDoIFind">
+              <h2 class="i18n" data-i18n="HOW_DO_I_FIND"></h2>
+              <p class="i18n" data-i18n="HOW_DO_I_FIND_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whatIsUproxyNetwork">
+              <h2 class="i18n" data-i18n="WHAT_IS_UPROXY_NETWORK"></h2>
+              <p class="i18n" data-i18n="WHAT_IS_UPROXY_NETWORK_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whatIsGitHub">
+              <h2 class="i18n" data-i18n="WHAT_IS_GITHUB"></h2>
+              <p class="i18n" data-i18n="WHAT_IS_GITHUB_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whenIAmSharingAccess">
+              <h2 class="i18n" data-i18n="WHEN_I_AM_SHARING_ACCESS"></h2>
+              <p class="i18n" data-i18n="WHEN_I_AM_SHARING_ACCESS_ANSWER"></p>
+
+            </section>
+
+            <section class="faq" id="willUproxyWork">
+              <h2 class="i18n" data-i18n="WILL_UPROXY_WORK"></h2>
+              <p class="i18n" data-i18n="WILL_UPROXY_WORK_ANSWER"></p>
+
+            </section>
+
+            <section class="faq" id="howDoesUproxyHelp">
+              <h2 class="i18n" data-i18n="HOW_DOES_UPROXY_HELP"></h2>
+              <p class="i18n" data-i18n="HOW_DOES_UPROXY_HELP_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whyIsItImportant">
+              <h2 class="i18n" data-i18n="WHY_IS_IT_IMPORTANT"></h2>
+              <p class="i18n" data-i18n="WHY_IS_IT_IMPORTANT_ANSWER"></p>
+
+            </section>
+
+            <section class="faq" id="doesUproxyLogData">
+              <h2 class="i18n" data-i18n="DOES_UPROXY_LOG_DATA"></h2>
+              <p class="i18n" data-i18n="DOES_UPROXY_LOG_DATA_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="doesUproxyGiveMe">
+              <h2 class="i18n" data-i18n="DOES_UPROXY_GIVE_ME"></h2>
+              <p class="i18n" data-i18n="DOES_UPROXY_GIVE_ME_ANSWER"></p>
+
+            </section>
+
+            <section class="faq" id="whatIsntProxied">
+              <h2 class="i18n" data-i18n="WHAT_ISNT_PROXIED"></h2>
+              <p class="i18n" data-i18n="WHAT_ISNT_PROXIED_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whoKnowsThat">
+              <h2 class="i18n" data-i18n="WHO_KNOWS_THAT"></h2>
+              <p class="i18n" data-i18n="WHO_KNOWS_THAT_ANSWER"><p>
+            </section>
+
+            <section class="faq" id="doesUproxyProtect">
+              <h2 class="i18n" data-i18n="DOES_UPROXY_PROTECT"></h2>
+              <p class="i18n" data-i18n="DOES_UPROXY_PROTECT_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whyIsUproxyAsking">
+              <h2 class="i18n" data-i18n="WHY_IS_UPROXY_ASKING"></h2>
+              <p class="i18n" data-i18n="WHY_IS_UPROXY_ASKING_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whatIsPortControl">
+              <h2 class="i18n" data-i18n="WHAT_IS_PORT_CONTROL"></h2>
+              <p class="i18n" data-i18n="WHAT_IS_PORT_CONTROL_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="howDoesUproxyCompare">
+              <h2 class="i18n" data-i18n="HOW_DOES_UPROXY_COMPARE"></h2>
+              <p class="i18n" data-i18n="HOW_DOES_UPROXY_COMPARE_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whoMadeUproxy">
+              <h2 class="i18n" data-i18n="WHO_MADE_UPROXY"></h2>
+              <p class="i18n" data-i18n="WHO_MADE_UPROXY_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whatIsBeta">
+              <h2 class="i18n" data-i18n="WHAT_IS_BETA"></h2>
+              <p class="i18n" data-i18n="WHAT_IS_BETA_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="howDoISubmit">
+              <h2 class="i18n" data-i18n="HOW_DO_I_SUBMIT"></h2>
+              <p class="i18n" data-i18n="HOW_DO_I_SUBMIT_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="howDoInstallUproxyOnServer">
+              <h2 class="i18n" data-i18n="HOW_DO_I_INSTALL_UPROXY_ON_SERVER"></h2>
+              <p class="i18n" data-i18n="HOW_DO_I_INSTALL_UPROXY_ON_SERVER_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whatIsDigitalOcean">
+              <h2 class="i18n" data-i18n="WHAT_IS_DIGITAL_OCEAN"></h2>
+              <p class="i18n" data-i18n="WHAT_IS_DIGITAL_OCEAN_ANSWER"></p>
+            </section>
+
+            <section class="faq" id="whatAreCloudServers">
+              <h2 class="i18n" data-i18n="WHAT_ARE_CLOUD_SERVERS"></h2>
+              <p class="i18n" data-i18n="WHAT_ARE_CLOUD_SERVERS_ANSWER"></p>
+            </section>
+          </div>
+        </div> <!-- end of contentContainer -->
+
+      </div>
+    </core-overlay>
+
+  </template>
+  <script src='faq.js'></script>
+</polymer-element>

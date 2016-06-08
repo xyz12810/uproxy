@@ -1,18 +1,19 @@
+/// <reference path='../../../third_party/typings/browser.d.ts' />
+
 /**
  * storage.ts
  *
  * Provides a promise-based interface to the storage provider.
  */
-/// <reference path='../../../third_party/typings/es6-promise/es6-promise.d.ts' />
-/// <reference path='../../../third_party/freedom-typings/freedom-module-env.d.ts' />
-/// <reference path='../../../third_party/freedom-typings/storage.d.ts' />
 
-import logging = require('../../../third_party/uproxy-lib/logging/logging');
+import logging = require('../lib/logging/logging');
+
+declare var freedom: freedom.FreedomInModuleEnv;
 
 var log :logging.Log = new logging.Log('storage');
 
 // Platform-independent storage provider.
-var fStorage :freedom_Storage = freedom['core.storage']();
+var fStorage :freedom.Storage.Storage = freedom['core.storage']();
 
 // Set false elsewhere to disable log messages (ie. from jasmine)
 export var DEBUG_STATESTORAGE = true;
@@ -69,6 +70,20 @@ export class Storage {
     }).catch((e) => {
       log.error('Save operation failed', e.message);
       return Promise.reject(e);
+    });
+  }
+
+  /**
+   * Promise removing a key from storage
+   */
+  public destroy(key :string) :Promise<void> {
+    log.debug('Removing key %1 from storage ', key);
+    return fStorage.remove(key).then((result :string) => {
+      log.debug('Successfully removed key %1 from storage', key);
+      return Promise.resolve<void>();
+    }).catch((e) => {
+      log.warn('Destroy operation failed', e.message);
+      return Promise.resolve<void>();
     });
   }
 

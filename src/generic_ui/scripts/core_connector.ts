@@ -1,14 +1,15 @@
+/// <reference path='../../../../third_party/typings/browser.d.ts' />
+
 /**
  * core_connector.ts
  *
  * Handles all connection and communication with the uProxy core.
  */
-/// <reference path='../../../../third_party/typings/es6-promise/es6-promise.d.ts' />
 
 import uproxy_core_api = require('../../interfaces/uproxy_core_api');
 import browser_connector = require('../../interfaces/browser_connector');
 import social = require('../../interfaces/social');
-import net = require('../../../../third_party/uproxy-lib/net/net.types');
+import net = require('../../lib/net/net.types');
 
 interface FullfillAndReject {
   fulfill :Function;
@@ -171,7 +172,7 @@ class CoreConnector implements uproxy_core_api.CoreApi {
     return this.promiseCommand(uproxy_core_api.Command.STOP_PROXYING_COPYPASTE_SHARE);
   }
 
-  sendCopyPasteSignal = (signal :social.PeerMessage) => {
+  sendCopyPasteSignal = (signal:string) => {
     this.sendCommand(uproxy_core_api.Command.COPYPASTE_SIGNALLING_MESSAGE, signal);
   }
 
@@ -197,12 +198,24 @@ class CoreConnector implements uproxy_core_api.CoreApi {
   //   this.sendCommand(uproxy_core_api.Command.CHANGE_OPTION, option);
   // }
 
-  login = (loginArgs :uproxy_core_api.LoginArgs) : Promise<void> => {
+  login = (loginArgs :uproxy_core_api.LoginArgs) : Promise<uproxy_core_api.LoginResult> => {
     return this.promiseCommand(uproxy_core_api.Command.LOGIN, loginArgs);
   }
 
   logout = (networkInfo :social.SocialNetworkInfo) : Promise<void> => {
     return this.promiseCommand(uproxy_core_api.Command.LOGOUT, networkInfo);
+  }
+
+  inviteGitHubUser = (data :uproxy_core_api.CreateInviteArgs): Promise<void> => {
+    return this.promiseCommand(uproxy_core_api.Command.INVITE_GITHUB_USER, data);
+  }
+
+  getInviteUrl = (data :uproxy_core_api.CreateInviteArgs): Promise<string> => {
+    return this.promiseCommand(uproxy_core_api.Command.GET_INVITE_URL, data);
+  }
+
+  sendEmail = (emailData :uproxy_core_api.EmailData): void => {
+    this.sendCommand(uproxy_core_api.Command.SEND_EMAIL, emailData);
   }
 
   restart = () => {
@@ -228,6 +241,22 @@ class CoreConnector implements uproxy_core_api.CoreApi {
 
   getVersion = () :Promise<{ version :string }> => {
     return this.promiseCommand(uproxy_core_api.Command.GET_VERSION);
+  }
+
+  acceptInvitation = (data :uproxy_core_api.AcceptInvitationData) : Promise<void>=> {
+    return this.promiseCommand(uproxy_core_api.Command.ACCEPT_INVITATION, data);
+  }
+
+  cloudUpdate = (args:uproxy_core_api.CloudOperationArgs): Promise<void> => {
+    return this.promiseCommand(uproxy_core_api.Command.CLOUD_UPDATE, args);
+  }
+
+  removeContact = (args:uproxy_core_api.RemoveContactArgs): Promise<void> => {
+    return this.promiseCommand(uproxy_core_api.Command.REMOVE_CONTACT, args);
+  }
+
+  postReport = (args:uproxy_core_api.PostReportArgs) : Promise<void> => {
+    return this.promiseCommand(uproxy_core_api.Command.POST_REPORT, args);
   }
 }  // class CoreConnector
 

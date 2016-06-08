@@ -10,8 +10,10 @@ var button = buttons.ActionButton({
   id: "uProxy-button",
   label: "uProxy",
   icon: {
-    "18": "./icons/19_offline.gif",
-    "36": "./icons/38_offline.gif"
+    "18": "./icons/18_offline.png",
+    "36": "./icons/36_offline.png",
+    "32": "./icons/32_online.png",
+    "64": "./icons/64_online.png"
   },
   onClick: start,
   badgeColor: "#009968"
@@ -21,7 +23,7 @@ var panel;
 
 // Load freedom.
 var manifest = self.data.url('generic_core/freedom-module.json');
-var loggingProviderManifest = self.data.url("uproxy-lib/loggingprovider/freedom-module.json");
+var loggingProviderManifest = self.data.url("lib/loggingprovider/freedom-module.json");
 var init = freedom(manifest, {
   'logger': loggingProviderManifest,
   'debug': 'debug'
@@ -31,11 +33,11 @@ var init = freedom(manifest, {
     width: 371,
     height: 600,
     contentURL: self.data.url("generic_ui/index.html")
-  })
+  });
 
   // Set up connection between freedom and content script.
-  require('glue.js').setUpConnection(new uproxy(), panel, button);
-  require('url-handler.js').setup(panel, button);
+  require('lib/glue.js').setUpConnection(new uproxy(), panel, button);
+  require('lib/url-handler.js').setup(panel, button);
 });
 
 

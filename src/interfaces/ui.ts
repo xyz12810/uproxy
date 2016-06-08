@@ -7,7 +7,8 @@ export enum View {
   SPLASH = 0,
   COPYPASTE,
   ROSTER,
-  BROWSER_ERROR
+  BROWSER_ERROR,
+  INVITE_USER
 }
 
 /**
@@ -26,6 +27,7 @@ export enum Mode {
 export interface UiApi {
 
   syncUser(UserMessage:social.UserData) : void;
+  removeFriend(args:{ networkName :string, userId :string }) : void;
   // TODO: Enforce these types of granular updates. (Doesn't have to be exactly
   // the below)...
   // updateAll(data:Object) : void;
@@ -37,4 +39,23 @@ export enum CopyPasteError {
   LOGGED_IN, // trying to copy+paste while logged in to a network
   UNEXPECTED, // received a url at an invalid time
   FAILED // something about the connection failed
+}
+
+export interface DialogButtonDescription {
+  text :string;
+  dismissive ?:boolean;
+  signal ?:string;
+}
+
+export interface DialogUserInputData {
+  placeholderText :string;
+  initInputValue ?:string;
+}
+
+export interface DialogDescription {
+  heading :string;
+  message :string;
+  buttons: DialogButtonDescription[];
+  userInputData ?:DialogUserInputData;
+  displayData ?:string;
 }

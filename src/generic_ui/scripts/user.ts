@@ -1,11 +1,12 @@
+/// <reference path='../../../../third_party/typings/browser.d.ts' />
+
 /**
  * user.ts
  *
  * This is the UI-specific representation of a User.
  */
-/// <reference path='../../../../third_party/freedom-typings/social.d.ts' />
-/// <reference path='../../../../third_party/typings/lodash/lodash.d.ts' />
 
+import model = require('./model');
 import social = require('../../interfaces/social');
 import user_interface = require('./ui');
 import translator_module = require('./translator');
@@ -38,6 +39,7 @@ export class User implements social.BaseUser {
   public name              :string;
   public imageData         :string;
   public url               :string;
+  public status            :social.UserStatus;
   public isGettingFromMe   :boolean = false;
   public isSharingWithMe   :boolean = false;
   // 'filter'-related flags which indicate whether the user should be
@@ -59,7 +61,7 @@ export class User implements social.BaseUser {
   /**
    * Initialize the user to an 'empty' default.
    */
-  constructor(public userId :string, public network :user_interface.Network,
+  constructor(public userId :string, public network :model.Network,
       private ui_ :user_interface.UserInterface) {
     console.log('new user: ' + this.userId);
     this.name = '';
@@ -83,11 +85,11 @@ export class User implements social.BaseUser {
       if (!payload.consent.ignoringRemoteUserOffer) {
         if (this.offeringInstances.length === 0 && payload.offeringInstances.length > 0) {
           if (payload.consent.localRequestsAccessFromRemote) {
-            this.ui_.showNotification(i18n_t("GRANTED_ACCESS_NOTIFICATION", {name: profile.name}),
-                         { mode: 'get', network: this.network.name, user: this.userId });
+            this.ui_.showNotification(i18n_t('GRANTED_ACCESS_NOTIFICATION', {name: profile.name}),
+                { mode: 'get', network: this.network.name, user: this.userId });
           } else {
-            this.ui_.showNotification(i18n_t("OFFERED_ACCESS_NOTIFICATION", {name: profile.name}),
-                         { mode: 'get', network: this.network.name, user: this.userId });
+            this.ui_.showNotification(i18n_t('OFFERED_ACCESS_NOTIFICATION', {name: profile.name}),
+                { mode: 'get', network: this.network.name, user: this.userId });
           }
         }
       }
@@ -96,19 +98,30 @@ export class User implements social.BaseUser {
       if (!payload.consent.ignoringRemoteUserRequest) {
         if (!this.consent_.remoteRequestsAccessFromLocal && payload.consent.remoteRequestsAccessFromLocal) {
           if (payload.consent.localGrantsAccessToRemote) {
-            this.ui_.showNotification(i18n_t("ACCEPTED_OFFER_NOTIFICATION", {name: profile.name}),
-                         { mode: 'share', network: this.network.name, user: this.userId });
+            this.ui_.showNotification(i18n_t('ACCEPTED_OFFER_NOTIFICATION', {name: profile.name}),
+                { mode: 'share', network: this.network.name, user: this.userId });
           } else {
-            this.ui_.showNotification(i18n_t("REQUESTING_ACCESS_NOTIFICATION", {name: profile.name}),
-                         { mode: 'share', network: this.network.name, user: this.userId });
+            this.ui_.showNotification(i18n_t('REQUESTING_ACCESS_NOTIFICATION', {name: profile.name}),
+                { mode: 'share', network: this.network.name, user: this.userId });
           }
         }
       }
     }
 
     this.name = profile.name;
-    this.imageData = profile.imageData || Constants.DEFAULT_USER_IMG;
     this.url = profile.url;
+
+    // We want to make it obvious that cloud friends are sharable to others.
+    // Normally, friends will only have share expanded if they are requesting
+    // access, but that will never be the case for a cloud server.
+    if (!this.status && profile.status === social.UserStatus.CLOUD_INSTANCE_CREATED_BY_LOCAL) {
+      this.shareExpanded = true;
+    }
+
+    this.status = profile.status;
+
+    this.imageData = user_interface.getImageData(this.userId, this.imageData,
+                                                 profile.imageData);
 
     // iterate backwards to allow removing elements
     var i = this.offeringInstances.length;
@@ -137,13 +150,13 @@ export class User implements social.BaseUser {
 
     // Update gettingConsentState, used to display correct getting buttons.
     if (this.offeringInstances.length > 0) {
-      // Expand the contact if there previously were no offers and we are not
-      // ignoring offers.
+      // Expand the contact if there previously were no offers, we are not
+      // ignoring offers, and the contact is online.
       if ((this.gettingConsentState ==
           GettingConsentState.NO_OFFER_OR_REQUEST ||
           this.gettingConsentState ==
           GettingConsentState.LOCAL_REQUESTED_REMOTE_NO_ACTION) &&
-          !this.consent_.ignoringRemoteUserOffer) {
+          !this.consent_.ignoringRemoteUserOffer && this.isOnline) {
         this.getExpanded = true;
       }
       if (this.consent_.localRequestsAccessFromRemote) {
@@ -167,13 +180,13 @@ export class User implements social.BaseUser {
 
     // Update sharingConsentState, used to display correct sharing buttons.
     if (this.consent_.remoteRequestsAccessFromLocal) {
-      // Expand the contact if there previously were no requests and we are not
-      // ignoring requests.
+      // Expand the contact if there previously were no requests, we are not
+      // ignoring requests, and the contact is online.
       if ((this.sharingConsentState ==
           SharingConsentState.NO_OFFER_OR_REQUEST ||
           this.sharingConsentState ==
           SharingConsentState.LOCAL_OFFERED_REMOTE_NO_ACTION) &&
-          !this.consent_.ignoringRemoteUserRequest) {
+          !this.consent_.ignoringRemoteUserRequest && this.isOnline) {
         this.shareExpanded = true;
       }
       if (this.consent_.localGrantsAccessToRemote) {
@@ -257,7 +270,7 @@ export class User implements social.BaseUser {
       var instance = this.offeringInstances[i];
       if (!instance.description) {
         // Set description to "Computer 1", "Computer 2", etc.
-        instance.description = i18n_t("DESCRIPTION_DEFAULT", {number: i + 1});
+        instance.description = i18n_t('DESCRIPTION_DEFAULT', {number: i + 1});
       }
     }
   }

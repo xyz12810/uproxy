@@ -1,3 +1,7 @@
+/// <reference path='../../../../../third_party/typings/browser.d.ts'/>
+/// <reference path='../../../../../third_party/typings/cordova/themeablebrowser.d.ts'/>
+/// <reference path='../../../../../third_party/typings/cordova/webintents.d.ts'/>
+
 /**
  * cordova_browser_api.ts
  *
@@ -6,12 +10,10 @@
  */
 
 import browser_api = require('../../../interfaces/browser_api');
+import ProxyDisconnectInfo = browser_api.ProxyDisconnectInfo;
 import BrowserAPI = browser_api.BrowserAPI;
-import net = require('../../../../../third_party/uproxy-lib/net/net.types');
+import net = require('../../../lib/net/net.types');
 import Constants = require('../../../generic_ui/scripts/constants');
-
-/// <reference path='../../../../third_party/typings/chrome/chrome-app.d.ts'/>
-/// <reference path='../../../../networking-typings/communications.d.ts' />
 
 enum PopupState {
     NOT_LAUNCHED,
@@ -23,7 +25,7 @@ declare var Notification :any; //TODO remove this
 
 class CordovaBrowserApi implements BrowserAPI {
 
-  public browserSpecificElement = "";
+  public browserSpecificElement = '';
 
   public canProxy = true;
 
@@ -37,7 +39,7 @@ class CordovaBrowserApi implements BrowserAPI {
   // The URL for the page that renders the UI.  For terminological consistency,
   // the UI is referred to as the "popup", even though it is persistent and
   // full-screen.
-  private POPUP_URL = "index.html";
+  private POPUP_URL = 'index.html';
   // When we tried to create UI.
   private popupCreationStartTime_ = Date.now();
 
@@ -46,18 +48,161 @@ class CordovaBrowserApi implements BrowserAPI {
   public handlePopupLaunch :() => void;
   private onceLaunched_ :Promise<void>;
 
+  private browser_ :Window = null;
+
   constructor() {
+    chrome.notifications.onClicked.addListener((tag) => {
+      this.emit_('notificationclicked', tag);
+    });
+
+    // Cordova APIs are not guaranteed to be available until after the
+    // deviceready event fires.  This is a special event: if you miss it,
+    // and add your listener after the event has already fired, Cordova
+    // guarantees that your listener will run immediately.
+    // We listen to window.top because CCA runs application code in an iframe,
+    // but deviceready never fires on the iframe.
+    window.top.document.addEventListener('deviceready', () => {
+      // We use the copy of webintent attached to the top-level window, instead
+      // of the window for this iframe, because the iframe's copy of webintent
+      // is populated asynchronously and may not be ready yet when deviceready
+      // fires.
+      window.top.webintent.getUri(this.onUrl_);  // Handle URL already received.
+      window.top.webintent.onNewIntent(this.onUrl_);  // Handle future URLs.
+    }, false);
+  }
+
+  private onUrl_ = (url:string) => {
+    // "request/" and "offer/" require trailing slashes. "invite" does not.
+    var urlMatch = /(?:http|https)\:\/\/(?:www\.)?uproxy\.org\/(request\/|offer\/|invite).*/;
+    if (!url) {
+      // This is expected because webintent.getUri() calls back with null if
+      // there is no URI for this startup, i.e. normal startup.
+      return;
+    }
+    var match = url.match(urlMatch);
+    if (!match) {
+      // Unrecognized URL.  This is an error, because only matching URLs are
+      // listed in our <intent-filter> in config.xml.
+      console.warn('Unmatched intent URL: ' + url);
+      return;
+    }
+    if (match[1] === 'invite') {
+      this.emit_('inviteUrlData', url);
+    } else if (match[1] === 'request/' || match[1] === 'offer/') {
+      this.emit_('copyPasteUrlData', url);
+    } else {
+      // This code is unreachable.
+      console.warn('Bug encountered while processing url: ' + url);
+    }
+  }
+
+  public isConnectedToCellular = () : Promise<boolean> => {
+    return new Promise<boolean>((F, R) => {
+        var isConnectedToCellular = false;
+        chrome.system.network.getNetworkInterfaces((networkIfaceArray) => {
+          for (var i = 0; i < networkIfaceArray.length; i++) {
+            var iface = networkIfaceArray[i];
+            if (iface.name.substring(0, 5) === 'rmnet') {
+              console.log('User Connected to cellular network.');
+              isConnectedToCellular = true;
+              break;
+            }
+          }
+          F(isConnectedToCellular);
+        });
+      });
   }
 
   public startUsingProxy = (endpoint:net.Endpoint) => {
-    // TODO: Implement getter support, possibly using "redsocks".
+    if (!chrome.proxy) {
+      console.log('No proxy setting support; ignoring start command');
+      return;
+    }
+
+    chrome.proxy.settings.set({
+      scope: 'regular',
+      value: {
+        mode: 'fixed_servers',
+        rules: {
+          singleProxy: {
+            scheme: 'socks5',
+            host: endpoint.address,
+            port: endpoint.port
+          }
+        }
+      }
+    }, (response:Object) => {
+      console.log('Set proxy response:', response);
+      // Open the in-app browser through the proxy.
+      this.openTab('https://news.google.com/');
+    });
   };
 
   public stopUsingProxy = () => {
+    if (!chrome.proxy) {
+      console.log('No proxy setting support; ignoring stop command');
+      return;
+    }
+
+    chrome.proxy.settings.clear({scope: 'regular'}, () => {
+      console.log('Cleared proxy settings');
+    });
   };
 
   public openTab = (url :string) => {
-    // TODO: Figure out what this means in Cordova.
+    if (this.browser_) {
+      return;
+    }
+    this.browser_ = cordova.ThemeableBrowser.open(url, '_blank', {
+      statusbar: {
+        color: '#ffffffff'
+      },
+      toolbar: {
+        height: 44,
+        color: '#f0f0f0ff'
+      },
+      title: {
+        color: '#003264ff',
+        showPageTitle: false
+      },
+      backButton: {
+        image: 'back',
+        imagePressed: 'back_pressed',
+        align: 'left'
+      },
+      forwardButton: {
+        image: 'forward',
+        imagePressed: 'forward_pressed',
+        align: 'left'
+      },
+      closeButton: {
+        image: 'close',
+        imagePressed: 'close_pressed',
+        align: 'right',
+        event: 'closePressed'
+      },
+      backButtonCanClose: false
+    });
+
+    this.browser_.addEventListener(cordova.ThemeableBrowser.EVT_ERR, function(e) {
+      console.error(e);
+    });
+    this.browser_.addEventListener(cordova.ThemeableBrowser.EVT_WRN, function(e) {
+      console.log(e);
+    });
+    this.browser_.addEventListener('closePressed', (e) => {
+      this.browser_ = null;
+      this.stopUsingProxy();
+      this.emit_('proxyDisconnected', {deliberate: true});
+    });
+    this.browser_.addEventListener('loadstart', (e:any) => {
+      // If the browser opens the autoclose URL, kill it.
+      if (e.url.indexOf('https://www.uproxy.org/autoclose') === 0) {
+        this.browser_.close();
+        this.browser_ = null;
+        // TODO: What if this happens during a proxying session?
+      }
+    });
   }
 
   public launchTabIfNotOpen = (relativeUrl :string) => {
@@ -84,8 +229,8 @@ class CordovaBrowserApi implements BrowserAPI {
     } else {
       // Once the app has started, all subsequent calls to bringUproxyToFront
       // are no-ops.
+      console.log('Waiting for popup to launch...');
       return this.onceLaunched_;
-      console.log("Waiting for popup to launch...");
     }
   }
 
@@ -93,25 +238,21 @@ class CordovaBrowserApi implements BrowserAPI {
     * Callback passed to chrome.app.window.create.
     */
   private newPopupCreated_ = (popup :chrome.app.window.AppWindow) => {
-    console.log("Time between browser icon click and popup launch (ms): " +
+    console.log('Time between browser icon click and popup launch (ms): ' +
         (Date.now() - this.popupCreationStartTime_));
     this.popupState_ = PopupState.LAUNCHED;
-    this.handlePopupLaunch();
   }
 
   public showNotification = (text :string, tag :string) => {
-    var notification =
-        new Notification('uProxy', {
-          body: text,
-          icon: 'icons/38_' + Constants.DEFAULT_ICON,
-          tag: tag
-        });
-    notification.onclick = () => {
-      this.emit_('notificationClicked', tag);
-    };
-    setTimeout(function() {
-      notification.close();
-    }, 5000);
+    // We use chrome.notifications because the HTML5 Notification API is not
+    // available (and not polyfilled) in WebViews, so it only works in
+    // Crosswalk.
+    chrome.notifications.create(tag, {
+      type: 'basic',
+      iconUrl: 'icons/38_' + Constants.DEFAULT_ICON,
+      title: 'uProxy',  // Mandatory attribute
+      message: text
+    }, (tag:string) => {});
   }
 
   public setBadgeNotification = (notification:string) :void => {
@@ -120,23 +261,42 @@ class CordovaBrowserApi implements BrowserAPI {
 
   private events_ :{[name :string] :Function} = {};
 
+  // Queue of any events emitted that don't have listeners yet.  This is needed
+  // for the 'inviteUrlData' event, if the invite URL caused uProxy to open,
+  // because otherwise the event would be emitted before UserInterface has a
+  // chance to set a listener on it.
+  private pendingEvents_ :{[name :string] :Object[][]} = {};
+
   public on = (name :string, callback :Function) => {
+    if (name in this.events_) {
+      console.warn('Overwriting Cordova Browser API event listener: ' + name);
+    }
     this.events_[name] = callback;
+    if (name in this.pendingEvents_) {
+      this.pendingEvents_[name].forEach((args:Object[]) => {
+        callback.apply(null, args);
+      });
+      delete this.pendingEvents_[name];
+    }
   }
 
   private emit_ = (name :string, ...args :Object[]) => {
     if (name in this.events_) {
       this.events_[name].apply(null, args);
     } else {
-      console.error('Attempted to trigger an unknown event', name);
+      if (!(name in this.pendingEvents_)) {
+        this.pendingEvents_[name] = [];
+      }
+      this.pendingEvents_[name].push(args);
     }
   }
 
-  public frontedPost = (data :any,
-                        externalDomain :string,
-                        cloudfrontDomain :string,
-                        cloudfrontPath = "") : Promise<void> => {
-    return Promise.reject(new Error('TODO: Fronted post in Cordova'));
+  public respond = (data :any, callback ?:Function, msg ?:string) : void => {
+    callback && this.respond_(data, callback);
+  }
+
+  private respond_ = (data :any, callback :Function) : void => {
+    callback(data);
   }
 }
 

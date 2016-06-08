@@ -13,6 +13,7 @@
 *.vpw*
 *.vtg
 *.xcf
+*.orig
 *~
 .DS_Store
 .grunt
@@ -26,3 +27,6 @@ node_modules
 npm-debug.log
 test_output
 tmp
+keys
+third_party/typings/main*
+third_party/typings/browser*

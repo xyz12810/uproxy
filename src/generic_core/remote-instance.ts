@@ -1,3 +1,5 @@
+/// <reference path='../../../third_party/typings/browser.d.ts' />
+
 /**
  * remote-instance.ts
  *
@@ -6,29 +8,25 @@
  * consent, proxying status, and any other signalling information.
  */
 
-/// <reference path='../../../third_party/typings/lodash/lodash.d.ts' />
-/// <reference path='../../../third_party/freedom-typings/pgp.d.ts' />
-
+import arraybuffers = require('../lib/arraybuffers/arraybuffers');
+import bridge = require('../lib/bridge/bridge');
 import consent = require('./consent');
+import crypto = require('./crypto');
 import globals = require('./globals');
-import logging = require('../../../third_party/uproxy-lib/logging/logging');
-import net = require('../../../third_party/uproxy-lib/net/net.types');
+import _ = require('lodash');
+import logging = require('../lib/logging/logging');
+import net = require('../lib/net/net.types');
+import Persistent = require('../interfaces/persistent');
 import remote_connection = require('./remote-connection');
 import remote_user = require('./remote-user');
-import bridge = require('../../../third_party/uproxy-lib/bridge/bridge');
-import signals = require('../../../third_party/uproxy-lib/webrtc/signals');
+import signals = require('../lib/webrtc/signals');
 import social = require('../interfaces/social');
 import ui_connector = require('./ui_connector');
-import uproxy_core_api = require('../interfaces/uproxy_core_api');
 import user_interface = require('../interfaces/ui');
-import _ = require('lodash');
-import arraybuffers = require('../../../third_party/uproxy-lib/arraybuffers/arraybuffers');
+import uproxy_core_api = require('../interfaces/uproxy_core_api');
 
 import storage = globals.storage;
 import ui = ui_connector.connector;
-import pgp = globals.pgp;
-
-import Persistent = require('../interfaces/persistent');
 
 // Keep track of the current remote instance who is acting as a proxy server
 // for us.
@@ -57,13 +55,8 @@ import Persistent = require('../interfaces/persistent');
     // Client version of the remote peer.
     public messageVersion :number;
 
-    public bytesSent   :number = 0;
-    public bytesReceived    :number = 0;
     // Current proxy access activity of the remote instance with respect to the
     // local instance of uProxy.
-    public localGettingFromRemote = social.GettingState.NONE;
-    public localSharingWithRemote = social.SharingState.NONE;
-
     public wireConsentFromRemote :social.ConsentWireState = {
       isRequesting: false,
       isOffering: false
@@ -84,7 +77,7 @@ import Persistent = require('../interfaces/persistent');
     private isUIUpdatePending = false;
 
     // Number of milliseconds before timing out socksToRtc_.start
-    public SOCKS_TO_RTC_TIMEOUT :number = 30000;
+    public SOCKS_TO_RTC_TIMEOUT :number = 90000;
     // Ensure RtcToNet is only closed after SocksToRtc times out (i.e. finishes
     // trying to connect) by timing out rtcToNet_.start 15 seconds later than
     // socksToRtc_.start
@@ -95,6 +88,11 @@ import Persistent = require('../interfaces/persistent');
     private startRtcToNetTimeout_ :NodeJS.Timer = null;
 
     private connection_ :remote_connection.RemoteConnection = null;
+
+    // Permission token that we have received from this instance, but have not
+    // yet sent back to the remote user (e.g. because they were offline when
+    // we accepted their invite).
+    public unusedPermissionToken :string;
 
     /**
      * Construct a Remote Instance as the result of receiving an instance
@@ -132,18 +130,17 @@ import Persistent = require('../interfaces/persistent');
             log.error('Could not find clientId for instance', this);
             return;
           }
-          if (typeof this.publicKey !== 'undefined') {
-            var arrayBufferData =
-                arraybuffers.stringToArrayBuffer(JSON.stringify(data.data));
-            pgp.signEncrypt(arrayBufferData, this.publicKey)
-                .then((cipherData:ArrayBuffer) => {
-                  return pgp.armor(cipherData);
-                }).then((cipherText :string) => {
-                  data.data = cipherText;
-                  this.user.network.send(this.user, clientId, data);
-                }).catch((e) => {
-                  log.error('Error encrypting message ', e);
-                });
+          if (typeof this.publicKey !== 'undefined' &&
+              typeof globals.publicKey !== 'undefined' &&
+              // No need to encrypt again for networks like Quiver
+              !this.user.network.isEncrypted() &&
+              // Disable crypto for ios
+              globals.settings.crypto) {
+            crypto.signEncrypt(JSON.stringify(data.data), this.publicKey)
+            .then((cipherText :string) => {
+              data.data = cipherText;
+              this.user.network.send(this.user, clientId, data);
+            });
           } else {
             this.user.network.send(this.user, clientId, data);
           }
@@ -162,10 +159,6 @@ import Persistent = require('../interfaces/persistent');
           });
           break;
         case uproxy_core_api.Update.STATE:
-          this.bytesSent = data.bytesSent;
-          this.bytesReceived = data.bytesReceived;
-          this.localGettingFromRemote = data.localGettingFromRemote;
-          this.localSharingWithRemote = data.localSharingWithRemote;
           this.user.notifyUI();
           break;
         default:
@@ -185,7 +178,7 @@ import Persistent = require('../interfaces/persistent');
     }
 
     public isSharing = () => {
-      return this.localSharingWithRemote === social.SharingState.SHARING_ACCESS;
+      return this.connection_.localSharingWithRemote === social.SharingState.SHARING_ACCESS;
     }
 
     /**
@@ -196,19 +189,22 @@ import Persistent = require('../interfaces/persistent');
      * TODO: return a boolean on success/failure
      */
     public handleSignal = (msg :social.VersionedPeerMessage) :Promise<void> => {
-
-      if (msg.version < 5) {
-        return this.handleDecryptedSignal_(msg.type, msg.version, msg.data);
-      } else {
-        return pgp.dearmor(<string>msg.data).then((cipherData :ArrayBuffer) => {
-          return pgp.verifyDecrypt(cipherData, this.publicKey);
-        }).then((result :VerifyDecryptResult) => {
-          var decryptedSignal =
-              JSON.parse(arraybuffers.arrayBufferToString(result.data));
-          return this.handleDecryptedSignal_(msg.type, msg.version, decryptedSignal);
+      if (typeof this.publicKey !== 'undefined' &&
+          typeof globals.publicKey !== 'undefined' &&
+          // signal data is not encrypted for Quiver, because entire message
+          // is encrypted over the network and already decrypted by this point
+          !this.user.network.isEncrypted() &&
+          // Disable crypto for ios
+          globals.settings.crypto) {
+        return crypto.verifyDecrypt(<string>msg.data, this.publicKey)
+        .then((plainText :string) => {
+          return this.handleDecryptedSignal_(
+              msg.type, msg.version, JSON.parse(plainText));
         }).catch((e) => {
           log.error('Error decrypting message ', e);
         });
+      } else {
+        return this.handleDecryptedSignal_(msg.type, msg.version, msg.data);
       }
     }
 
@@ -243,15 +239,15 @@ import Persistent = require('../interfaces/persistent');
         });
 
         /*
-        TODO: Uncomment when getter sends a cancel signal if socksToRtc closes while
-        trying to connect. Something like:
-        https://github.com/uProxy/uproxy-lib/tree/lucyhe-emitcancelsignal
-        Issue: https://github.com/uProxy/uproxy/issues/1256
+          TODO: Uncomment when getter sends a cancel signal if socksToRtc closes while
+          trying to connect. Something like:
+          https://github.com/uProxy/uproxy-lib/tree/lucyhe-emitcancelsignal
+          Issue: https://github.com/uProxy/uproxy/issues/1256
 
-        } else if (signalFromRemote['type'] == signals.Type.CANCEL_OFFER) {
+         else if (signalFromRemote['type'] == signals.Type.CANCEL_OFFER) {
           this.stopShare();
           return;
-        }
+          }
         */
       }
 
@@ -268,7 +264,7 @@ import Persistent = require('../interfaces/persistent');
       */
     private startShare_ = () : void => {
       var sharingStopped :Promise<void>;
-      if (this.localSharingWithRemote === social.SharingState.NONE) {
+      if (this.connection_.localSharingWithRemote === social.SharingState.NONE) {
         // Stop any existing sharing attempts with this instance.
         sharingStopped = Promise.resolve<void>();
       } else {
@@ -305,12 +301,12 @@ import Persistent = require('../interfaces/persistent');
     }
 
     public stopShare = () :Promise<void> => {
-      if (this.localSharingWithRemote === social.SharingState.NONE) {
+      if (this.connection_.localSharingWithRemote === social.SharingState.NONE) {
         log.warn('Cannot stop sharing while currently not sharing.');
         return Promise.resolve<void>();
       }
 
-      if (this.localSharingWithRemote === social.SharingState.TRYING_TO_SHARE_ACCESS) {
+      if (this.connection_.localSharingWithRemote === social.SharingState.TRYING_TO_SHARE_ACCESS) {
         clearTimeout(this.startRtcToNetTimeout_);
       }
       return this.connection_.stopShare();
@@ -363,7 +359,8 @@ import Persistent = require('../interfaces/persistent');
     public update = (data:social.InstanceHandshake,
         messageVersion:number) :Promise<void> => {
       return this.onceLoaded.then(() => {
-        if (typeof this.publicKey === 'undefined' || !this.keyVerified) {
+        if (data.publicKey &&
+            (typeof this.publicKey === 'undefined' || !this.keyVerified)) {
           this.publicKey = data.publicKey;
         }
         this.description = data.description;
@@ -376,12 +373,19 @@ import Persistent = require('../interfaces/persistent');
     private updateConsentFromWire_ = (bits :social.ConsentWireState) => {
       var userConsent = this.user.consent;
 
+      if (!bits.isOffering &&
+          this.connection_.localGettingFromRemote === social.GettingState.TRYING_TO_GET_ACCESS) {
+        // if we lose the ability to get, cancel any pending gets
+        clearTimeout(this.startSocksToRtcTimeout_);
+        this.connection_.stopGet();
+      }
+
       // Update this remoteInstance.
       this.wireConsentFromRemote = bits;
       this.user.updateRemoteRequestsAccessFromLocal();
     }
 
-    private saveToStorage = () => {
+    public saveToStorage = () => {
       return this.onceLoaded.then(() => {
         var state = this.currentState();
         return storage.save(this.getStorePath(), state)
@@ -402,7 +406,8 @@ import Persistent = require('../interfaces/persistent');
         wireConsentFromRemote: this.wireConsentFromRemote,
         description:           this.description,
         publicKey:             this.publicKey,
-        keyVerified:           this.keyVerified
+        keyVerified:           this.keyVerified,
+        unusedPermissionToken: this.unusedPermissionToken
       });
     }
 
@@ -425,6 +430,9 @@ import Persistent = require('../interfaces/persistent');
         log.error('Failed to load wireConsentFromRemote for instance ' +
             this.instanceId);
       }
+      if (typeof state.unusedPermissionToken !== 'undefined') {
+        this.unusedPermissionToken = state.unusedPermissionToken;
+      }
     }
 
     /**
@@ -434,14 +442,17 @@ import Persistent = require('../interfaces/persistent');
     // TODO: bad smell: remote-instance should not need to know the structure of
     // UI message data. Maybe rename to |getInstanceData|?
     public currentStateForUi = () :social.InstanceData => {
+      var connectionState = this.connection_.getCurrentState();
+
       return {
         instanceId:             this.instanceId,
         description:            this.description,
-        localGettingFromRemote: this.localGettingFromRemote,
-        localSharingWithRemote: this.localSharingWithRemote,
         isOnline:               this.user.isInstanceOnline(this.instanceId),
-        bytesSent:              this.bytesSent,
-        bytesReceived:          this.bytesReceived
+        localGettingFromRemote: connectionState.localGettingFromRemote,
+        localSharingWithRemote: connectionState.localSharingWithRemote,
+        bytesSent:              connectionState.bytesSent,
+        bytesReceived:          connectionState.bytesReceived,
+        activeEndpoint:         connectionState.activeEndpoint,
       };
     }
 
@@ -463,7 +474,8 @@ import Persistent = require('../interfaces/persistent');
     wireConsentFromRemote :social.ConsentWireState;
     description           :string;
     publicKey             :string;
-    keyVerified           :boolean
+    keyVerified           :boolean;
+    unusedPermissionToken :string;
   }
 
   // TODO: Implement obfuscation.

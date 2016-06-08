@@ -1,3 +1,5 @@
+/// <reference path='../../../third_party/typings/browser.d.ts' />
+
 /**
  * remote-connection.ts
  *
@@ -5,18 +7,18 @@
  * It handles the signaling channel between two peers, regardless of permission.
  */
 
-/// <reference path='../../../third_party/freedom-typings/port-control.d.ts' />
-
+import bridge = require('../lib/bridge/bridge');
 import globals = require('./globals');
-import logging = require('../../../third_party/uproxy-lib/logging/logging');
-import net = require('../../../third_party/uproxy-lib/net/net.types');
-import rtc_to_net = require('../../../third_party/uproxy-lib/rtc-to-net/rtc-to-net');
-import bridge = require('../../../third_party/uproxy-lib/bridge/bridge');
+import logging = require('../lib/logging/logging');
+import net = require('../lib/net/net.types');
+import peerconnection = require('../lib/webrtc/peerconnection');
+import rtc_to_net = require('../lib/rtc-to-net/rtc-to-net');
 import social = require('../interfaces/social');
-import socks_to_rtc = require('../../../third_party/uproxy-lib/socks-to-rtc/socks-to-rtc');
+import socks_to_rtc = require('../lib/socks-to-rtc/socks-to-rtc');
+import tcp = require('../lib/net/tcp');
 import uproxy_core_api = require('../interfaces/uproxy_core_api');
-import peerconnection = require('../../../third_party/uproxy-lib/webrtc/peerconnection');
-import tcp = require('../../../third_party/uproxy-lib/net/tcp');
+
+declare var freedom: freedom.FreedomInModuleEnv;
 
 var PROXYING_SESSION_ID_LENGTH = 16;
 
@@ -73,7 +75,7 @@ var generateProxyingSessionId_ = (): string => {
     constructor(
       sendUpdate :(x :uproxy_core_api.Update, data?:Object) => void,
       private userId_?:string,
-      private portControl_?:freedom_PortControl.PortControl
+      private portControl_?:freedom.PortControl.PortControl
     ) {
       this.sendUpdate_ = sendUpdate;
       this.resetSharerCreated();
@@ -131,7 +133,7 @@ var generateProxyingSessionId_ = (): string => {
         throw new Error('rtcToNet_ already exists');
       }
 
-      var config :freedom_RTCPeerConnection.RTCConfiguration = {
+      var config :freedom.RTCPeerConnection.RTCConfiguration = {
         iceServers: globals.settings.stunServers
       };
 
@@ -272,7 +274,7 @@ var generateProxyingSessionId_ = (): string => {
         port: 0
       });
 
-      var config :freedom_RTCPeerConnection.RTCConfiguration = {
+      var config :freedom.RTCPeerConnection.RTCConfiguration = {
         iceServers: globals.settings.stunServers
       };
 
@@ -302,6 +304,7 @@ var generateProxyingSessionId_ = (): string => {
           pc = bridge.best('sockstortc', config, this.portControl_);
         }
 
+        globals.metrics.increment('attempt');
       return this.socksToRtc_.start(tcpServer, pc).then(
           (endpoint :net.Endpoint) => {
         log.info('SOCKS proxy listening on %1', endpoint);
@@ -312,7 +315,6 @@ var generateProxyingSessionId_ = (): string => {
         return endpoint;
       }).catch((e :Error) => {
         this.localGettingFromRemote = social.GettingState.NONE;
-        globals.metrics.increment('failure');
         this.stateRefresh_();
         return Promise.reject(Error('Could not start proxy'));
       });
@@ -323,7 +325,7 @@ var generateProxyingSessionId_ = (): string => {
         log.warn('Cannot stop proxying when neither proxying nor trying to proxy.');
         return;
       }
-
+      globals.metrics.increment('stop');
       this.localGettingFromRemote = social.GettingState.NONE;
       this.stateRefresh_();
       return this.socksToRtc_.stop();
@@ -359,12 +361,13 @@ var generateProxyingSessionId_ = (): string => {
       this.sendUpdate_(uproxy_core_api.Update.STATE, this.getCurrentState());
     }
 
-    public getCurrentState = () => {
+    public getCurrentState = () :uproxy_core_api.ConnectionState => {
       return {
         bytesSent: this.bytesSent_,
         bytesReceived: this.bytesReceived_,
         localGettingFromRemote: this.localGettingFromRemote,
-        localSharingWithRemote: this.localSharingWithRemote
+        localSharingWithRemote: this.localSharingWithRemote,
+        activeEndpoint: this.activeEndpoint,
       };
     }
 

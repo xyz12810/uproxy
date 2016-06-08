@@ -3,17 +3,17 @@
  * interface to be extended as classes specific to particular components.
  */
 
-import net = require('../../../third_party/uproxy-lib/net/net.types');
+import net = require('../lib/net/net.types');
 import uproxy_core_api = require('./uproxy_core_api');
 
 export interface UserPath {
   network :SocialNetworkInfo;
-  userId :string;
+  userId :string; // ID for a friend
 }
 
 export interface SocialNetworkInfo {
   name :string;
-  userId :string;
+  userId ?:string; // ID for current user
 }
 
 export interface InstancePath extends UserPath {
@@ -31,26 +31,47 @@ export interface StopProxyInfo {
   error      :boolean;
 }
 
+export interface PermissionTokenInfo {
+  isRequesting :boolean;
+  isOffering :boolean;
+  createdAt :number;
+  acceptedByUserIds :string[];
+}
+
 export interface LocalInstanceState {
-  instanceId  :string;
-  userId      :string;
-  userName    :string;
-  imageData   :string;
+  instanceId       :string;
+  userId           :string;
+  userName         :string;
+  imageData        :string;
+  invitePermissionTokens :{ [token :string] :PermissionTokenInfo };
+  exchangeInviteToken : (token :string, userId :string) => PermissionTokenInfo;
 }
 
 export interface NetworkMessage {
-  name       :string;
-  online     :boolean;
-  userId     :string;
-  userName   :string;
-  imageData  :string
+  name        :string;
+  online      :boolean;
+  userId      :string;
+  userName    :string;
+  imageData   :string
 }
 
 export interface UserProfileMessage {
+  status?: UserStatus;
   imageData    ?:string; // Image URI (e.g. data:image/png;base64,adkwe329...)
   name         ?:string;
   url          ?:string;
   userId       :string;
+}
+
+// The profile of a user on a social network.
+export interface UserProfile {
+  userId       :string;
+  status       ?:number;
+  name         ?:string;
+  url          ?:string;
+  // Image URI (e.g. data:image/png;base64,adkwe329...)
+  imageData    ?:string;
+  timestamp    ?:number;
 }
 
 export interface ConsentState {
@@ -69,6 +90,7 @@ export interface InstanceData {
   isOnline               :boolean;
   localGettingFromRemote :GettingState;
   localSharingWithRemote :SharingState;
+  activeEndpoint         :net.Endpoint;
 }
 
 export interface UserData {
@@ -82,16 +104,21 @@ export interface UserData {
 }
 
 export interface NetworkState {
-  name     :string;
-  profile  :UserProfileMessage;
-  // TODO: bad smell: UI data should not be
-  roster   :{[userId :string] :UserData };
+  name         :string;
+  profile      :UserProfileMessage;
+  roster       :{[userId :string] :UserData };
 }
 
 export interface NetworkOptions {
   isFirebase :boolean;
   enableMonitoring :boolean;
   areAllContactsUproxy :boolean;
+  supportsReconnect :boolean;
+  displayName ?:string;  // Network name to be displayed in the UI.
+  metricsName ?:string;  // Name to use for metrics
+  isExperimental ?:boolean;
+  isEncrypted ?:boolean;
+  rosterFunction ?:(rosterNames:string[])=>number;
 }
 
 /**
@@ -110,7 +137,8 @@ export enum PeerMessageType {
   SIGNAL_FROM_CLIENT_PEER,
   SIGNAL_FROM_SERVER_PEER,
   // Request that an instance message be sent back from a peer.
-  INSTANCE_REQUEST
+  INSTANCE_REQUEST,
+  PERMISSION_TOKEN
 }
 
 export interface PeerMessage {
@@ -127,15 +155,6 @@ export interface VersionedPeerMessage extends PeerMessage {
   version: number;
 }
 
-// The payload of a HANDLE_MANUAL_NETWORK_INBOUND_MESSAGE command. There is a
-// client ID for the sender but no user ID because in the manual network
-// there is no concept of a single user having multiple clients; in the
-// manual network the client ID uniquely identifies the user.
-export interface HandleManualNetworkInboundMessageCommand {
-  message         :VersionedPeerMessage;
-  senderClientId  :string;
-}
-
 // The different states that uProxy consent can be in w.r.t. a peer. These
 // are the values that get sent or received on the wire.
 export interface ConsentWireState {
@@ -149,12 +168,18 @@ export interface ConsentWireState {
  */
 export interface InstanceHandshake {
   instanceId  :string;
-  publicKey   :string;
   consent     :ConsentWireState;
   description ?:string;
-  name        :string;
-  userId      :string;
+  // publicKey is not set for networks which include the public key in their
+  // clientId (Quiver).
+  publicKey   ?:string;
 }
+
+// This is only used for sending the received permission token back to the
+// user who generated the token.
+export interface PermissionTokenMessage {
+  token :string;
+};
 
 // Describing whether or not a remote instance is currently accessing or not,
 // assuming consent is GRANTED for that particular pathway.
@@ -184,6 +209,14 @@ export enum ClientStatus {
   ONLINE_WITH_OTHER_APP,
 }
 
+export enum UserStatus {
+  FRIEND = 0,
+  LOCAL_INVITED_BY_REMOTE = 1,
+  REMOTE_INVITED_BY_LOCAL = 2,
+  CLOUD_INSTANCE_CREATED_BY_LOCAL = 3,
+  CLOUD_INSTANCE_SHARED_WITH_LOCAL = 4
+}
+
 // Status of a client connected to a social network.
 export interface ClientState {
   userId    :string;
@@ -201,8 +234,8 @@ export interface UserState {
   // be saved and loaded separately.
   instanceIds :string[];
   consent     :ConsentState;
+  status      :UserStatus;
 }
-
 
 export interface RemoteUserInstance {
   start() :Promise<net.Endpoint>;
@@ -215,6 +248,23 @@ export interface SignallingMetadata {
   // Random ID associated with this proxying attempt.
   // Used for logging purposes and implicitly delimits proxying attempts.
   proxyingId ?:string;
+}
+
+export interface InviteTokenPermissions {
+  token :string;
+  isRequesting :boolean;
+  isOffering :boolean;
+}
+
+export interface InviteTokenData {
+  v :number;  // version
+  networkName :string;
+  // TODO: make this optional, it's not used by cloud social provider (and maybe others)
+  userName :string;
+  networkData :string|Object;
+  permission ?:InviteTokenPermissions;
+  userId ?:string;  // Only included if permissions also set
+  instanceId ?:string;  // Only included if permissions also set
 }
 
 /**
@@ -250,7 +300,7 @@ export interface Network {
    * appropriate, and sends an update to the UI upon success. Does nothing if
    * already logged in.
    */
-  login :(reconnect :boolean) => Promise<void>;
+  login :(loginType :uproxy_core_api.LoginType, userName ?:string) => Promise<void>;
 
   getStorePath :() => string;
 
@@ -268,6 +318,26 @@ export interface Network {
    * Returns the User corresponding to |userId|.
    */
   getUser :(userId :string) => RemoteUser;
+
+  /**
+   * Accept an invite to use uProxy with a friend
+   */
+  acceptInvitation: (token ?:InviteTokenData, userId ?:string) => Promise<void>;
+
+  /**
+   * Send an invite to a GitHub friend to use uProxy
+   */
+  inviteGitHubUser: (data :uproxy_core_api.CreateInviteArgs) => Promise<void>;
+
+  /**
+   * Generates an invite token
+   */
+  getInviteUrl: (data :uproxy_core_api.CreateInviteArgs) => Promise<string>;
+
+  /**
+   * Generates an invite token
+   */
+  sendEmail: (to :string, subject :string, body :string) => void;
 
   /**
     * Resends the instance handeshake to all uProxy instances.
@@ -292,5 +362,13 @@ export interface Network {
   getNetworkState : () => NetworkState;
 
   areAllContactsUproxy : () => boolean;
-}
 
+  isEncrypted : () => boolean;
+
+  getKeyFromClientId : (clientId :string) => string;
+  
+  /**
+   * Removes user from the network's roster and storage
+   */
+  removeUserFromStorage : (userId :string) => Promise<void>;
+}

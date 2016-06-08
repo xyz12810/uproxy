@@ -1,3 +1,5 @@
+/// <reference path='../../../third_party/typings/browser.d.ts' />
+
 /*
  * remote-instance.spec.ts
  *
@@ -6,19 +8,30 @@
  * they've been disconnected. This must ensure that we resolve the
  * correct consent values between remote instances.
  */
-/// <reference path='../../../third_party/typings/jasmine/jasmine.d.ts' />
+
+import freedomMocker = require('../lib/freedom/mocks/mock-freedom-in-module-env');
+
+import freedom_mocks = require('../mocks/freedom-mocks');
+declare var freedom: freedom.FreedomInModuleEnv;
+freedom = freedomMocker.makeMockFreedomInModuleEnv({
+  'core.storage': () => { return new freedom_mocks.MockFreedomStorage(); },
+  'core.tcpsocket': () => { return new freedom_mocks.MockTcpSocket(); },
+  'metrics': () => { return new freedom_mocks.MockMetrics(); },
+  'pgp': () => { return new freedom_mocks.PgpProvider() },
+  'portControl': () => { return new Object },
+});
 
 import remote_user = require('./remote-user');
 import consent = require('./consent');
 import remote_instance = require('./remote-instance');
 import social = require('../interfaces/social');
-import socks_to_rtc = require('../../../third_party/uproxy-lib/socks-to-rtc/socks-to-rtc');
-import rtc_to_net = require('../../../third_party/uproxy-lib/rtc-to-net/rtc-to-net');
+import socks_to_rtc = require('../lib/socks-to-rtc/socks-to-rtc');
+import rtc_to_net = require('../lib/rtc-to-net/rtc-to-net');
 import globals = require('./globals');
 import local_storage = require('./storage');
-import net = require('../../../third_party/uproxy-lib/net/net.types');
+import net = require('../lib/net/net.types');
 import local_instance = require('./local-instance');
-import bridge = require('../../../third_party/uproxy-lib/bridge/bridge');
+import bridge = require('../lib/bridge/bridge');
 
 
 describe('remote_instance.RemoteInstance', () => {
@@ -43,7 +56,7 @@ describe('remote_instance.RemoteInstance', () => {
   user.isInstanceOnline = function() {
     return true;
   };
-  user.onceNameReceived = Promise.resolve<string>("name");
+  user.onceNameReceived = Promise.resolve<string>('name');
 
   var socksToRtc =
       <socks_to_rtc.SocksToRtc><any>jasmine.createSpyObj('socksToRtc', [
@@ -77,8 +90,7 @@ describe('remote_instance.RemoteInstance', () => {
     it ('update waits for loading to complete', (done) => {
       instance0.update({
         instanceId : 'newInstanceId', publicKey : 'key', description: 'desc',
-        consent: {isRequesting: true, isOffering: true},
-        name: 'name', userId: 'userId'
+        consent: {isRequesting: true, isOffering: true}
       }, globals.MESSAGE_VERSION).then(() => {
         expect(instance0.publicKey).toEqual('key');
         expect(instance0.description).toEqual('desc');
@@ -121,8 +133,7 @@ describe('remote_instance.RemoteInstance', () => {
       expect(userConsent.remoteRequestsAccessFromLocal).toEqual(false);
       instance.update({
         instanceId: INSTANCE_ID, description: '', publicKey: '',
-        consent: {isOffering: true, isRequesting: true},
-        name: 'name', userId: 'userId'
+        consent: {isOffering: true, isRequesting: true}
       }, globals.MESSAGE_VERSION).then(() => {
         expect(instance.wireConsentFromRemote.isOffering).toEqual(true);
         expect(instance.wireConsentFromRemote.isRequesting).toEqual(true);
@@ -144,7 +155,7 @@ describe('remote_instance.RemoteInstance', () => {
     var fakeSocksToRtc = {
       handlers: <{[key :string] :Function}>{},
       'start':
-          (endpoint:net.Endpoint, pcConfig: freedom_RTCPeerConnection.RTCConfiguration) => {
+          (endpoint:net.Endpoint, pcConfig: freedom.RTCPeerConnection.RTCConfiguration) => {
          return Promise.resolve(endpoint);
       },
       'on': (t:string, f:Function) => { fakeSocksToRtc.handlers[t] = f; },
@@ -161,32 +172,36 @@ describe('remote_instance.RemoteInstance', () => {
     };
 
     it('can start proxying', (done) => {
-      expect(alice.localGettingFromRemote).toEqual(social.GettingState.NONE);
+      var aliceState = alice.currentStateForUi();
+      expect(aliceState.localGettingFromRemote).toEqual(social.GettingState.NONE);
       alice.user.consent.localRequestsAccessFromRemote = true;
       alice.wireConsentFromRemote.isOffering = true;
       // The module & constructor of SocksToRtc may change in the near future.
       spyOn(socks_to_rtc, 'SocksToRtc').and.returnValue(fakeSocksToRtc);
       alice.start().then(() => {
-        expect(alice.localGettingFromRemote)
+        aliceState = alice.currentStateForUi();
+        expect(aliceState.localGettingFromRemote)
             .toEqual(social.GettingState.GETTING_ACCESS);
         done();
       });
+      aliceState = alice.currentStateForUi();
       expect(socks_to_rtc.SocksToRtc).toHaveBeenCalled();
-      expect(alice.localGettingFromRemote)
+      expect(aliceState.localGettingFromRemote)
           .toEqual(social.GettingState.TRYING_TO_GET_ACCESS);
     });
 
     it('can stop proxying', () => {
       alice.stop();
-      expect(alice.localGettingFromRemote).toEqual(social.GettingState.NONE);
+      var aliceState = alice.currentStateForUi();
+      expect(aliceState.localGettingFromRemote).toEqual(social.GettingState.NONE);
     });
 
     it('refuses to start proxy without permission', () => {
       spyOn(socks_to_rtc, 'SocksToRtc').and.returnValue(fakeSocksToRtc);
       alice.wireConsentFromRemote.isOffering = false;
-      alice.localGettingFromRemote = social.GettingState.NONE;
       alice.start();
-      expect(alice.localGettingFromRemote).toEqual(social.GettingState.NONE);
+      var aliceState = alice.currentStateForUi();
+      expect(aliceState.localGettingFromRemote).toEqual(social.GettingState.NONE);
     });
 
     // This test no longer passes with the hack to use
@@ -201,7 +216,7 @@ describe('remote_instance.RemoteInstance', () => {
     //  // Mock socksToRtc to not fulfill start promise
     //  spyOn(socks_to_rtc, 'SocksToRtc').and.returnValue({
     //    'start':
-    //        (endpoint:net.Endpoint, pcConfig:freedom_RTCPeerConnection.RTCConfiguration) => {
+    //        (endpoint:net.Endpoint, pcConfig:freedom.RTCPeerConnection.RTCConfiguration) => {
     //       return new Promise((F, R) => {});
     //    },
     //    'on': (t:string, f:Function) => {},
@@ -253,12 +268,13 @@ describe('remote_instance.RemoteInstance', () => {
       spyOn(fakeRtcToNet, 'handleSignalFromPeer');
       spyOn(socks_to_rtc, 'SocksToRtc').and.returnValue(fakeSocksToRtc);
       spyOn(rtc_to_net, 'RtcToNet').and.returnValue(fakeRtcToNet);
+      alice['connection_'].onceSharerCreated = Promise.resolve<void>();
     });
 
     it('handles OFFER signal from client peer as server', (done) => {
       alice.handleSignal({
           type: social.PeerMessageType.SIGNAL_FROM_CLIENT_PEER,
-          data: JSON.stringify(fakeSignallingMessage),
+          data: fakeSignallingMessage,
           version: globals.MESSAGE_VERSION}).then(() => {
         expect(fakeSocksToRtc.handleSignalFromPeer).not.toHaveBeenCalled();
         expect(fakeRtcToNet.handleSignalFromPeer).toHaveBeenCalledWith(
@@ -272,7 +288,7 @@ describe('remote_instance.RemoteInstance', () => {
       alice.start().then(() => {
         alice.handleSignal({
             type: social.PeerMessageType.SIGNAL_FROM_SERVER_PEER,
-            data: JSON.stringify(fakeSignallingMessage),
+            data: fakeSignallingMessage,
             version: globals.MESSAGE_VERSION}).then(() => {
           expect(fakeSocksToRtc.handleSignalFromPeer).toHaveBeenCalledWith(
               fakeSignallingMessage);
@@ -285,7 +301,7 @@ describe('remote_instance.RemoteInstance', () => {
     it('rejects invalid signals', (done) => {
       alice.handleSignal({
           type: social.PeerMessageType.INSTANCE,
-          data: JSON.stringify(fakeSignallingMessage),
+          data: fakeSignallingMessage,
           version: globals.MESSAGE_VERSION}).then(() => {
         expect(fakeRtcToNet.handleSignalFromPeer).not.toHaveBeenCalled();
         expect(fakeSocksToRtc.handleSignalFromPeer).not.toHaveBeenCalled();
@@ -297,7 +313,7 @@ describe('remote_instance.RemoteInstance', () => {
       alice.user.consent.localGrantsAccessToRemote = false;
       alice.handleSignal({
           type: social.PeerMessageType.SIGNAL_FROM_CLIENT_PEER,
-          data: JSON.stringify(fakeSignallingMessage),
+          data: fakeSignallingMessage,
           version: globals.MESSAGE_VERSION}).then(() => {
         expect(fakeSocksToRtc.handleSignalFromPeer).not.toHaveBeenCalled();
         expect(fakeRtcToNet.handleSignalFromPeer).not.toHaveBeenCalled();

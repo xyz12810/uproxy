@@ -1,3 +1,5 @@
+/// <reference path='../../../../../third_party/typings/browser.d.ts'/>
+
 /**
  * background.ts
  *
@@ -6,8 +8,6 @@
  */
 // Assumes that core_stub.ts has been loaded.
 // UserInterface is defined in 'generic_ui/scripts/ui.ts'.
-
-/// <reference path='../../../../../third_party/typings/compare-version/compare-version.d.ts'/>
 
 import ChromeBrowserApi = require('./chrome_browser_api');
 import ChromeCoreConnector = require('./chrome_core_connector');
@@ -36,17 +36,29 @@ chrome.runtime.onSuspend.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener((request :any, sender: chrome.runtime.MessageSender, sendResponse :Function) => {
+  if (!request) return;
+
   // handle requests from other pages (i.e. copypaste.html) to bring the
   // chrome popup to the front
-  if (request && request.openWindow) {
+  if (request.openWindow) {
     browserApi.bringUproxyToFront();
   }
 
   // handle requests to get logs
-  if (request && request.getLogs) {
+  if (request.getLogs) {
     core.getLogs().then((logs) => {
       sendResponse({ logs: logs });
     });
+    return true;
+  }
+
+  if (request.globalSettingsRequest) {
+    ui.handleGlobalSettingsRequest(sendResponse);
+    return true;
+  }
+
+  if (request.translationsRequest) {
+    ui.handleTranslationsRequest(request.translationsRequest, sendResponse);
     return true;
   }
 });
@@ -54,11 +66,15 @@ chrome.runtime.onMessage.addListener((request :any, sender: chrome.runtime.Messa
 chrome.runtime.onMessageExternal.addListener((request :any, sender :chrome.runtime.MessageSender, sendResponse :Function) => {
   // Reply to pings from the uproxy website that are checking if the
   // extension is installed.
-  if (request && request.checkIfInstalled) {
-    sendResponse({ extensionInstalled: true });
-  } else if (request && request.openWindow) {
-    browserApi.bringUproxyToFront();
-    sendResponse({ launchedUproxy: true });
+  if (request) {
+    if (request.checkIfInstalled) {
+      sendResponse({ extensionInstalled: true });
+    } else if (request.openWindow) {
+      browserApi.bringUproxyToFront();
+      sendResponse({ launchedUproxy: true });
+    } else if (request.promoId) {
+      browserApi.emit('promoIdDetected', request.promoId);
+    }
   }
   return true;
 });
@@ -106,8 +122,8 @@ chrome.runtime.onInstalled.addListener((details :chrome.runtime.InstalledDetails
     browserApi.hasInstalledThenLoggedIn = false;
     chrome.browserAction.setIcon({
       path: {
-        "19" : "icons/19_" + Constants.DEFAULT_ICON,
-        "38" : "icons/38_" + Constants.DEFAULT_ICON,
+        '19' : 'icons/19_' + Constants.DEFAULT_ICON,
+        '38' : 'icons/38_' + Constants.DEFAULT_ICON,
       }
     });
   });
@@ -115,8 +131,8 @@ chrome.runtime.onInstalled.addListener((details :chrome.runtime.InstalledDetails
   chrome.tabs.query({currentWindow: true, active: true}, function(tabs){
       // Do not open the extension when it's installed if the user is
       // going through the inline install flow.
-      if ((tabs[0].url.indexOf("uproxysite.appspot.com/chrome-install") == -1) &&
-          (tabs[0].url.indexOf("uproxy.org/chrome-install") == -1)) {
+      if ((tabs[0].url.indexOf('uproxysite.appspot.com/install') == -1) &&
+          (tabs[0].url.indexOf('uproxy.org/install') == -1)) {
         browserApi.bringUproxyToFront();
       }
   });
@@ -130,30 +146,53 @@ core = new CoreConnector(browserConnector);
 var oAuth = new ChromeTabAuth();
 browserConnector.onUpdate(uproxy_core_api.Update.GET_CREDENTIALS,
                          oAuth.login.bind(oAuth));
+var ui = new user_interface.UserInterface(core, browserApi);
 
 // used for de-duplicating urls caught by the listeners
 var lastUrl = '';
 var lastUrlTime = 0;
 
 chrome.webRequest.onBeforeRequest.addListener(
-  function() {
-    return {cancel: true};
-  },
-  {urls: ['https://www.uproxy.org/oauth-redirect-uri*']},
-  ['blocking']
-);
+    function(details) {
+      browserApi.emit('inviteUrlData', details.url);
+      // TODO: If there are duplicate emits of this, consider the de-dupe logic
+      // used by the listener for copypaste links below.
+      return {
+          redirectUrl: chrome.extension.getURL('generic_ui/invite-received.html')
+      };
+    },
+    { urls: ['https://www.uproxy.org/invite*'] },
+    ['blocking']
+    );
+
+chrome.webRequest.onBeforeRequest.addListener(
+    function() {
+        return { cancel: true };
+    },
+    { urls: ['https://www.uproxy.org/oauth-redirect-uri*',
+        'https://www.uproxy.org/autoclose*'] },
+    ['blocking']
+    );
+
+chrome.tabs.onUpdated.addListener((tabId :number,
+    changeInfo :chrome.tabs.TabChangeInfo, tab :chrome.tabs.Tab) => {
+  if (tab.url.indexOf('https://www.uproxy.org/autoclose') === 0) {
+    chrome.tabs.remove(tabId);
+    browserApi.bringUproxyToFront();
+  }
+});
 
 chrome.webRequest.onBeforeRequest.addListener(
   function(details) {
     var url = details.url;
 
-    // Chome seems to sometimes send the same url to us twice, we never
+    // Chrome seems to sometimes send the same url to us twice, we never
     // should be receiving the exact same data twice so de-dupe any url
     // with the last one we received before processing it.  We also want
     // to allow a url to be pasted twice if there has been at least a second
     // delay in order to allow users to try connecting again.
     if (lastUrl !== url || Date.now() - lastUrlTime > 1000) {
-      browserApi.emit('urlData', url);
+      browserApi.emit('copyPasteUrlData', url);
     } else {
       console.warn('Received duplicate url events', url);
     }

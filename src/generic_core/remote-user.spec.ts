@@ -1,4 +1,15 @@
-/// <reference path='../../../third_party/typings/jasmine/jasmine.d.ts' />
+/// <reference path='../../../third_party/typings/browser.d.ts' />
+
+import freedomMocker = require('../lib/freedom/mocks/mock-freedom-in-module-env');
+
+import freedom_mocks = require('../mocks/freedom-mocks');
+declare var freedom: freedom.FreedomInModuleEnv;
+freedom = freedomMocker.makeMockFreedomInModuleEnv({
+  'core.storage': () => { return new freedom_mocks.MockFreedomStorage(); },
+  'metrics': () => { return new freedom_mocks.MockMetrics(); },
+  'pgp': () => { return new freedom_mocks.PgpProvider() },
+  'portControl': () => { return new Object },
+});
 
 import social = require('../interfaces/social');
 import remote_user = require('./remote-user');
@@ -20,6 +31,7 @@ describe('remote_user.User', () => {
   ]);
   network['getLocalInstanceId'] = function() { return 'dummyInstanceId'; };
   network['send'] = () => { return Promise.resolve(); };
+  network['isEncrypted'] = () => { return false; };
   network['myInstance'] =
       new local_instance.LocalInstance(network, 'localUserId');
 
@@ -170,13 +182,11 @@ describe('remote_user.User', () => {
 
   });  // describe communications
 
-  var instanceHandshake = {
+  var instanceHandshake :social.InstanceHandshake = {
     instanceId: 'fakeinstance',
     publicKey: <string>null,
     description: 'fake instance',
-    consent: {isRequesting: false, isOffering: false},
-    name: 'nameFromInstance',
-    userId: 'userIdFromInstance'
+    consent: {isRequesting: false, isOffering: false}
   }
 
   describe('client <---> instance', () => {
@@ -219,45 +229,6 @@ describe('remote_user.User', () => {
 
     it('syncs UI after updating instance', () => {
       user.syncInstance_('fakeclient', instanceHandshake, globals.MESSAGE_VERSION);
-    });
-
-    it('Sets user name if pending', () => {
-      var pendingUser = new remote_user.User(network, 'pendingUser');
-      pendingUser.handleClient({
-        userId: 'pendingUser', clientId: 'fakeclient',
-        status: social.ClientStatus.ONLINE, timestamp: 12345
-      });
-      expect(pendingUser.name).toEqual('pending');
-      pendingUser.syncInstance_('fakeclient', instanceHandshake,
-          globals.MESSAGE_VERSION);
-      expect(pendingUser.name).toEqual(instanceHandshake.name);
-    });
-
-    it('Sets user name to userId if pending and no name in handshake', () => {
-      var pendingUser = new remote_user.User(network, 'pendingUser');
-      pendingUser.handleClient({
-        userId: 'pendingUser', clientId: 'fakeclient',
-        status: social.ClientStatus.ONLINE, timestamp: 12345
-      });
-      expect(pendingUser.name).toEqual('pending');
-      pendingUser.syncInstance_('fakeclient', {
-        instanceId: 'fakeinstance', publicKey: <string>null, description: 'x',
-        consent: {isRequesting: false, isOffering: false},
-        name: '', userId: 'userIdFromInstance'
-      }, globals.MESSAGE_VERSION);
-      expect(pendingUser.name).toEqual('userIdFromInstance');
-    });
-
-    it('Does not change name for non-pending user', () => {
-      var namedUser = new remote_user.User(network, 'userId');
-      namedUser.handleClient({
-        userId: 'pendingUser', clientId: 'fakeclient',
-        status: social.ClientStatus.ONLINE, timestamp: 12345
-      });
-      namedUser.update({name: 'Henry', userId: 'userId', timestamp: 42});
-      namedUser.syncInstance_('fakeclient', instanceHandshake,
-          globals.MESSAGE_VERSION);
-      expect(namedUser.name).toEqual('Henry');
     });
 
   });  // describe client <---> instance
@@ -407,6 +378,44 @@ describe('remote_user.User', () => {
     expect(user.consent.localRequestsAccessFromRemote).toEqual(false);
     expect(user.consent.localGrantsAccessToRemote).toEqual(false);
     expect(user.consent.remoteRequestsAccessFromLocal).toEqual(false);
+  });
+
+  it('handleInvitePermissions creates new instance if needed', (done) => {
+    const USER_ID = '123';
+    const INSTANCE_ID = '456';
+    const PERMISSION_TOKEN = '999';
+    user = new remote_user.User(network, USER_ID);
+    var inviteTokenData = {
+      v: 1,
+      networkName: 'GMail',
+      userName: 'Bob',
+      networkData: '',
+      permission: {
+        token: PERMISSION_TOKEN,
+        isRequesting: true,
+        isOffering: false
+      },
+      userId: USER_ID,
+      instanceId: INSTANCE_ID
+    };
+    expect(user.getInstance(INSTANCE_ID)).toBeUndefined();
+    user.handleInvitePermissions(inviteTokenData);
+
+    // Check that instance is created.
+    var instance = user.getInstance(INSTANCE_ID);
+    expect(instance).toBeDefined();
+
+    // Check that instance is offline and unusedPermissionToken is set
+    expect(user.isInstanceOnline(INSTANCE_ID)).toEqual(false);
+    expect(instance.unusedPermissionToken).toEqual(PERMISSION_TOKEN);
+
+    // Wait for instance.update to be complete beore checking consent.
+    instance.onceLoaded.then(() => {
+      expect(instance.wireConsentFromRemote.isRequesting).toEqual(true);
+      expect(instance.wireConsentFromRemote.isOffering).toEqual(false);
+      expect(user.consent.remoteRequestsAccessFromLocal).toEqual(true);
+      done();
+    });
   });
 
 });  // uProxy.User

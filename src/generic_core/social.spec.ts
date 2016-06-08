@@ -1,8 +1,18 @@
-/// <reference path='../../../third_party/typings/jasmine/jasmine.d.ts' />
+/// <reference path='../../../third_party/typings/browser.d.ts' />
 
+import freedomMocker = require('../lib/freedom/mocks/mock-freedom-in-module-env');
+
+import freedom_mocks = require('../mocks/freedom-mocks');
+declare var freedom: freedom.FreedomInModuleEnv;
+freedom = freedomMocker.makeMockFreedomInModuleEnv({
+  'core.storage': () => { return new freedom_mocks.MockFreedomStorage(); },
+  'metrics': () => { return new freedom_mocks.MockMetrics(); },
+  'pgp': () => { return new freedom_mocks.PgpProvider() },
+  'portControl': () => { return new Object },
+});
 
 import social = require('../interfaces/social');
-
+import rappor_metrics = require('./metrics');
 import social_network = require('./social');
 import local_storage = require('./storage');
 import local_instance = require('./local-instance');
@@ -12,6 +22,7 @@ import uproxy_core_api = require('../interfaces/uproxy_core_api');
 import ui_connector = require('./ui_connector');
 import ui = ui_connector.connector;
 
+
 class MockSocial {
   public on = () => {}
   public emit = () => {}
@@ -19,6 +30,7 @@ class MockSocial {
   public login = () => {}
   public logout = () => {}
   public sendMessage = () => { return Promise.resolve(); }
+  public inviteUser = () => { return Promise.resolve({data: 'InviteTokenData'}); }
 }
 
 // Valid message that won't have side effects on network/user/instance objects.
@@ -27,17 +39,24 @@ var VALID_MESSAGE = {
   data: <any>null
 };
 
+var freedomClient :freedom.Social.ClientState = {
+  userId: 'mockmyself',
+  clientId: 'fakemyself',
+  status: 'ONLINE',
+  timestamp: 12345
+};
+
+var fakeFreedomClient :freedom.Social.ClientState = {
+  userId: 'mockmyself',
+  clientId: 'fakemyself',
+  status: 'ONLINE',
+  timestamp: 12345
+};
+
 describe('freedomClientToUproxyClient', () => {
   beforeEach(() => {
     spyOn(console, 'log');
   });
-
-  var freedomClient :freedom_Social.ClientState = {
-    userId: 'mockmyself',
-    clientId: 'fakemyself',
-    status: 'ONLINE',
-    timestamp: 12345
-  };
   var uproxyClient = social_network.freedomClientToUproxyClient(freedomClient);
 
   it('converts status to enum', () => {
@@ -57,18 +76,15 @@ describe('social_network.FreedomNetwork', () => {
   freedom['SOCIAL-badmock'] = <any>(() => { return new MockSocial(); });
   freedom['SOCIAL-mock'] = <any>(() => { return new MockSocial(); });
   freedom['SOCIAL-mock'].api = 'social';
+  freedom['SOCIAL-Quiver'] = <any>(() => { return new MockSocial(); });
+  freedom['SOCIAL-Quiver'].api = 'social2';
 
   var loginPromise :Promise<void>;
-  var fakeFreedomClient :freedom_Social.ClientState = {
-    userId: 'mockmyself',
-    clientId: 'fakemyself',
-    status: 'ONLINE',
-    timestamp: 12345
-  };
-
+  var metrics :rappor_metrics.Metrics;
   beforeEach(() => {
     // Spy / override log messages to keep test output clean.
     spyOn(console, 'log');
+    metrics = new rappor_metrics.Metrics(null);
   });
 
   it('initialize networks', () => {
@@ -80,14 +96,14 @@ describe('social_network.FreedomNetwork', () => {
 
 
   it('begins with empty roster', () => {
-    var network = new social_network.FreedomNetwork('mock');
+    var network = new social_network.FreedomNetwork('mock', metrics);
     expect(network.roster).toEqual({});
   });
 
 
   describe('login & logout', () => {
 
-    var network = new social_network.FreedomNetwork('mock');
+    var network = new social_network.FreedomNetwork('mock', metrics);
     it('can log in', (done) => {
       // TODO: figure out how jasmine clock works and add it back
       // jasmine.clock().install();
@@ -120,7 +136,7 @@ describe('social_network.FreedomNetwork', () => {
           'dummy-instance-id/roster/somefriend', ''));
 
       Promise.all(savedToStorage).then(() => {
-        var loginPromise = network.login(false);
+        var loginPromise = network.login(uproxy_core_api.LoginType.INITIAL);
         return loginPromise;
       }).then(() => {
         expect(network.myInstance).toBeDefined();
@@ -128,7 +144,7 @@ describe('social_network.FreedomNetwork', () => {
             fakeFreedomClient.userId);
         expect(network['myInstance'].instanceId).toEqual(
             'dummy-instance-id');
-        var freedomClientState :freedom_Social.ClientState = {
+        var freedomClientState :freedom.Social.ClientState = {
           userId: 'fakeuser',
           clientId: 'fakeclient',
           status: 'ONLINE',
@@ -160,7 +176,7 @@ describe('social_network.FreedomNetwork', () => {
       // Pretend the social API's login failed.
       spyOn(network['freedomApi_'], 'login').and.returnValue(
           Promise.reject(new Error('mock failure')));
-      network.login(false).catch(done);
+      network.login(uproxy_core_api.LoginType.INITIAL).catch(done);
       //jasmine.clock().tick(1);
     });
 
@@ -199,13 +215,13 @@ describe('social_network.FreedomNetwork', () => {
     // var delayed :Function;
 
     it('delays handler until login', () => {
-      var network = new social_network.FreedomNetwork('mock');
+      var network = new social_network.FreedomNetwork('mock', metrics);
       spyOn(network['freedomApi_'], 'login').and.returnValue(
           new Promise((F, R) => {
             fakeLoginFulfill = F;
           }));
       expect(network['onceLoggedIn_']).toBeDefined();
-      network.login(false);  // Will complete in the next spec.
+      network.login(uproxy_core_api.LoginType.INITIAL);  // Will complete in the next spec.
       // handlerPromise = delayed('hooray');
       handlerPromise = network['delayForLogin_'](foo.bar)('hooray');
       expect(foo.bar).not.toHaveBeenCalled();
@@ -221,7 +237,7 @@ describe('social_network.FreedomNetwork', () => {
   });  // describe handler promise delays
 
   describe('incoming events', () => {
-    var network = new social_network.FreedomNetwork('mock');
+    var network = new social_network.FreedomNetwork('mock', metrics);
 
     it('adds a new user for |onUserProfile|', (done) => {
       network.myInstance = new local_instance.LocalInstance(network, 'fakeId');
@@ -253,10 +269,10 @@ describe('social_network.FreedomNetwork', () => {
       done();
     });
 
-    it('passes |onClientState| to correct client', (done) => {
+    it('passes |onClientState| to correct user', () => {
       var user = network.getUser('mockuser');
       spyOn(user, 'handleClient');
-      var freedomClientState :freedom_Social.ClientState = {
+      var freedomClientState :freedom.Social.ClientState = {
         userId: 'mockuser',
         clientId: 'fakeclient',
         status: 'ONLINE',
@@ -265,12 +281,11 @@ describe('social_network.FreedomNetwork', () => {
       network.handleClientState(freedomClientState);
       expect(user.handleClient).toHaveBeenCalledWith(
         social_network.freedomClientToUproxyClient(freedomClientState));
-      done();
     });
 
     it('adds placeholder when receiving ClientState with userId not in roster',
-        (done) => {
-      var freedomClientState :freedom_Social.ClientState = {
+        () => {
+      var freedomClientState :freedom.Social.ClientState = {
         userId: 'im_not_here',
         clientId: 'fakeclient',
         status: 'ONLINE',
@@ -279,12 +294,11 @@ describe('social_network.FreedomNetwork', () => {
       network.handleClientState(freedomClientState);
       var user = network.getUser('im_not_here');
       expect(user).toBeDefined();
-      done();
     });
 
-    it('passes |onMessage| to correct client', (done) => {
+    it('passes |onMessage| to correct user', () => {
       var user = network.getUser('mockuser');
-      spyOn(user, 'handleMessage').and.returnValue(Promise.resolve());
+      spyOn(user, 'handleMessage');
       var msg = {
         from: {
           userId: 'mockuser',
@@ -300,10 +314,9 @@ describe('social_network.FreedomNetwork', () => {
       expect(user.handleMessage).toHaveBeenCalledWith('fakeclient', {
         'cats': 'meow'
       });
-      done();
     });
 
-    it('adds placeholder when receiving Message with userId not in roster', (done) => {
+    it('adds placeholder when receiving Message with userId not in roster', () => {
       var msg = {
         from: {
           userId: 'im_still_not_here',
@@ -316,13 +329,12 @@ describe('social_network.FreedomNetwork', () => {
       network.handleMessage(msg);
       var user = network.getUser('im_still_not_here');
       expect(user).toBeDefined();
-      done();
     });
 
   });  // describe events & communication
 
-  it('JSON.parse and stringify messages at the right layer', (done) => {
-    var network = new social_network.FreedomNetwork('mock');
+  it('JSON.parse and stringify messages at the right layer', () => {
+    var network = new social_network.FreedomNetwork('mock', metrics);
     spyOn(network, 'getStorePath').and.returnValue('');
     network['myInstance'] =
             new local_instance.LocalInstance(network, 'localUserId');
@@ -353,7 +365,6 @@ describe('social_network.FreedomNetwork', () => {
     network.send(network.getUser('mockuser'), 'fakeclient', outMsg)
     expect(JSON.stringify).toHaveBeenCalledWith(
       {type: outMsg.type, data: outMsg.data, version: globals.MESSAGE_VERSION});
-    done();
   });
 
   // TODO: get this unit test to pass.

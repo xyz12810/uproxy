@@ -1,14 +1,13 @@
 <link rel='import' href='../../bower/polymer/polymer.html'>
-<link rel='import' href='../../bower/paper-button/paper-button.html'>
 <link rel='import' href='../../bower/paper-checkbox/paper-checkbox.html'>
 <link rel='import' href='../../bower/paper-input/paper-input-decorator.html'>
 <link rel='import' href='../../bower/core-icons/core-icons.html'>
+<link rel='import' href='avatar.html'>
 <link rel='import' href='description.html'>
 <link rel='import' href='faq-link.html'>
 <link rel='import' href='link.html'>
-<link rel='import' href='network-in-settings.html'>
 <link rel='import' href='name-for-network.html'>
-<link rel='import' href='avatar.html'>
+<link rel='import' href='network-in-settings.html'>
 
 <polymer-element name='uproxy-settings'>
 
@@ -30,7 +29,7 @@
       cursor: pointer;
     }
     .userInfo {
-      background-color: #009688;  /* dark green */
+      background-color: #12A391;  /* dark green */
       color: white;
       padding: 28px;
       line-height: 24px;
@@ -69,15 +68,14 @@
       background-color: #fff;
     }
     .settingsContent core-icon {
-      height: 20px;
-      width: 20px;
+      height: 20px !important;
+      width: 20px !important;
     }
     .label {
       text-indent: 5px;
       display: inline-block;
     }
-    uproxy-link,
-    uproxy-faq-link {
+    uproxy-link {
       display: block;
       padding: 10px 0px;
     }
@@ -89,12 +87,6 @@
     paper-input-decorator {
       padding: 0;
       margin-bottom: 5px;
-    }
-    paper-button {
-      width: 70px;
-      margin-left: 0px;
-      margin-right: 5px;
-      font-size: 10px;
     }
     paper-checkbox::shadow #checkboxContainer {
       margin-left: 1px;
@@ -113,7 +105,7 @@
       padding: 0px 8px;
     }
     #metricsCheckbox core-icon[icon='help']{
-      height: 15px;
+      height: 15px !important;
       color: grey;
       opacity: 0.6;
       margin-bottom: 2px;
@@ -125,7 +117,7 @@
     #metricsCheckbox core-icon[icon='help']:hover {
       opacity: 1;
     }
-    #metricsCheckbox paper-checkbox, uproxy-faq-link {
+    #metricsCheckbox paper-checkbox, .faq-icon {
       display: table-cell;
     }
     #settingsLinks .label {
@@ -143,7 +135,7 @@
     }
     </style>
 
-    <div hidden?='{{ !model.onlineNetworks.length }}' vertical layout>
+    <div vertical layout>
       <div class='userInfo'>
         <div id='pictures' horizontal layout hidden?='{{ model.onlineNetworks.length === 1 && !model.onlineNetworks[0].imageData }}'>
           <template repeat='{{network in model.onlineNetworks}}'>
@@ -186,7 +178,7 @@
           <span class='label'>{{ "SUBMIT_FEEDBACK" | $$ }}</span>
         </uproxy-link>
 
-        <uproxy-faq-link>
+        <uproxy-faq-link role='button'>
           <core-icon icon="help"></core-icon>
           <span class='label'>{{ "GET_HELP" | $$ }}</span>
         </uproxy-faq-link>
@@ -197,8 +189,8 @@
         </uproxy-link>
 
         <div id='metricsCheckbox'>
-          <paper-checkbox checked='{{ model.globalSettings.statsReportingEnabled }}' label='{{ "STATS_ENABLED_TITLE" | $$ }}'></paper-checkbox>
-          <uproxy-faq-link anchor='doesUproxyLogData'>
+          <paper-checkbox label='{{ "STATS_ENABLED_TITLE" | $$ }}' checked='{{ model.globalSettings.statsReportingEnabled }}' on-change='{{updateStatsReportingEnabled}}'></paper-checkbox>
+          <uproxy-faq-link class='faq-icon' anchor='doesUproxyLogData'>
             <core-icon icon='help'></core-icon>
           </uproxy-faq-link>
         </div>
@@ -210,7 +202,7 @@
           <span class='label'>{{ "RESTART" | $$ }}</span>
         </uproxy-link>
 
-        <uproxy-link on-tap='{{ logOut }}' role='button'>
+        <uproxy-link on-tap='{{ logOut }}' hidden?="{{model.onlineNetworks.length==0}}" role='button'>
           <core-icon icon="uproxy-icons:logout"></core-icon>
           <span class='label'>{{ "LOGOUT" | $$ }}</span>
         </uproxy-link>
@@ -219,7 +211,7 @@
       <div id='accountChooser' class='settingsContent' hidden?='{{ !accountChooserOpen }}'>
         <span class='smalltext'>{{ "CONNECTED_ACCOUNTS" | $$ }}</span>
         <template repeat='{{ name in model.networkNames }}'>
-          <div>
+          <div hidden?="{{name=='Cloud' && !model.globalSettings.showCloud}}">
             <uproxy-network-in-settings name='{{ name }}'></uproxy-network-in-settings>
           </div>
         </template>

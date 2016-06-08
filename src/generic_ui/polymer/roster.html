@@ -1,8 +1,10 @@
+<link rel="import" href="../../bower/core-icons/core-icons.html">
+<link rel="import" href="../../bower/core-icons/social-icons.html">
+<link rel="import" href="../../bower/core-signals/core-signals.html">
 <link rel="import" href="../../bower/polymer/polymer.html">
 <link rel='import' href='../../bower/paper-progress/paper-progress.html'>
-<link rel="import" href="../../bower/core-signals/core-signals.html">
-<link rel="import" href="../../bower/core-icons/social-icons.html">
 <link rel='import' href='roster-group.html'>
+<link rel='import' href='faq-link.html'>
 
 <polymer-element name='uproxy-roster' attributes='contacts, mode'>
 
@@ -31,26 +33,65 @@
     }
     #loadContacts {
       text-align: center;
-      margin: 75px 80px;
+      margin: 110px 80px;
     }
     #loadContacts div {
       font-size: 17px;
     }
     .no-friends {
-      width: 150px;
-      height: 150px;
+      width: 150px !important;
+      height: 150px !important;
       color: #cbcbcb;
     }
-    #noContactsFound {
-      margin-top: 0.75em;
-    }
-    #inviteFriends {
-      font-size: 13px;
-      padding-top: 10px;
-      color: rgb(150,150,150);
+    core-icon.no-friends {
+      color: #e5efee;
     }
     #loadingContacts {
       margin-top: 0.5em;
+    }
+    /* TODO: this doesn't stretch quite right on large uProxy windows */
+    #connectWithFriendsInstruction {
+      top: 0;
+      position: absolute;
+      font-size: 16px;
+      line-height: 22px;
+      padding: 24px 24px 140px 24px;
+      box-sizing: border-box;
+      height: 100%;
+      width: 100%;
+    }
+    .instructions {
+      padding-right: 1em;  /* no left padding so img is properly centered */
+      height: 50%;
+    }
+    .instructions.cloud {
+      background-color: rgba(51,187,206,0.15);
+      color: #34AFCE;
+    }
+    .instructions.peerToPeer {
+      background-color: rgba(51,206,185,0.15);
+      color: #12A391;
+    }
+    .instructions .imageWrapper {
+      min-width: 60px;
+      text-align: center;
+      height: 100%;
+    }
+    .instructions .textWrapper {
+      height: 100%;
+      flex-basis: 35%;
+    }
+    .instructions img {
+      height: 50px;
+    }
+    .downArrow {
+      position: absolute;
+      right: 44px;
+      width: 0px;
+      height: 0px;
+      border-left: 20px solid transparent;
+      border-right: 20px solid transparent;
+      border-top: 20px solid rgb(225,246,244);  /* light aqua green */
     }
     paper-progress {
       margin-bottom: 1em;
@@ -61,6 +102,32 @@
       border-bottom: solid 1px;
       border-color: rgb(238, 238, 238);
     }
+    #orWrapper {
+      position: absolute;  /* take out of the flow */
+      top: 50%;
+      /* compensate for padding at the bottom and orCircle height */
+      transform: translateY(-77px);
+      width: 100%;
+      text-align: center;
+      left: 0;  /* needed for proper centering */
+    }
+    #orCircle {
+      display: inline-block;
+      height: 40px;
+      border-radius: 50%;
+      background-color: white;
+      width: 40px;
+    }
+    #orText {
+      font-size: 14px;
+      padding-top: 9px;
+      color: #12A391;
+    }
+    .centerVertical {
+      position: relative;
+      top: 50%;
+      transform: translateY(-50%);
+    }
     </style>
 
     <!-- Listen for the 'login-success' event from root.ts; once logged in, show the loading contacts animation. -->
@@ -68,15 +135,36 @@
 
     <!-- Shown if there are no contacts found so far -->
     <div id='loadContacts' hidden?='{{ hasContacts }}'>
-      <core-icon icon="social:person" class="no-friends"></core-icon>
       <div id='loadingContacts' hidden?='{{ !loadingContacts }}'>
+        <core-icon icon="social:person" class="no-friends"></core-icon>
         {{ "LOADING_FRIENDS" | $$ }}<br>
         <paper-progress indeterminate='true'></paper-progress>
       </div>
-      <div id='noContactsFound' hidden?='{{ loadingContacts }}'>
-        {{ "NO_FRIENDS_ONLINE" | $$ }}
-        <p id='inviteFriends'>{{ "TO_INVITE_FRIENDS" | $$ }}</p>
+    </div>
+
+    <div id="connectWithFriendsInstruction" hidden?="{{ loadingContacts || hasContacts }}">
+      <div class='instructions cloud' horizontal layout>
+        <div class='imageWrapper' flex>
+          <img src='../../icons/emptybuddylist-cloud.svg' class='centerVertical'>
+        </div>
+        <div class='textWrapper' flex>
+          <div class='centerVertical'>
+            {{ "EMPTY_ROSTER_CLOUD_INSTRUCTIONS" | $$ }}
+          </div>
+        </div>
       </div>
+      <div id='orWrapper'><div id='orCircle'><div id='orText'>or</div></div></div>
+      <div class='instructions peerToPeer' style='margin-top:3px;' horizontal layout>
+        <div class='imageWrapper' flex>
+          <img src='../../icons/emptybuddylist-friend.svg' class='centerVertical'>
+        </div>
+        <div class='textWrapper' flex>
+          <div class='centerVertical'>
+            {{ "EMPTY_ROSTER_PEER_TO_PEER_INSTRUCTIONS" | $$ }}
+          </div>
+        </div>
+      </div>
+      <div class='downArrow'></div>
     </div>
 
     <div hidden?='{{ !hasContacts }}'>

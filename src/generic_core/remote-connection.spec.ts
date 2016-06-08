@@ -1,3 +1,5 @@
+/// <reference path='../../../third_party/typings/browser.d.ts' />
+
 /*
  * remote-connection.spec.ts
  *
@@ -5,13 +7,25 @@
  * to a remote uproxy client is correct in addition to handling of events
  * after that connection is established
  */
-/// <reference path='../../../third_party/typings/jasmine/jasmine.d.ts' />
+
+import freedomMocker = require('../lib/freedom/mocks/mock-freedom-in-module-env');
+
+import freedom_mocks = require('../mocks/freedom-mocks');
+declare var freedom: freedom.FreedomInModuleEnv;
+freedom = freedomMocker.makeMockFreedomInModuleEnv({
+  'core.storage': () => { return new freedom_mocks.MockFreedomStorage(); },
+  'core.tcpsocket': () => { return new freedom_mocks.MockTcpSocket(); },
+  'metrics': () => { return new freedom_mocks.MockMetrics(); },
+  'pgp': () => { return new freedom_mocks.PgpProvider() },
+  'portControl': () => { return new Object },
+});
+
 import globals = require('./globals');
 import remote_connection = require('./remote-connection');
 import social = require('../interfaces/social');
 import uproxy_core_api = require('../interfaces/uproxy_core_api');
-import rtc_to_net = require('../../../third_party/uproxy-lib/rtc-to-net/rtc-to-net');
-import socks_to_rtc = require('../../../third_party/uproxy-lib/socks-to-rtc/socks-to-rtc');
+import rtc_to_net = require('../lib/rtc-to-net/rtc-to-net');
+import socks_to_rtc = require('../lib/socks-to-rtc/socks-to-rtc');
 import rtc_to_net_mock = require('../mocks/rtc-to-net');
 import socks_to_rtc_mock = require('../mocks/socks-to-rtc');
 

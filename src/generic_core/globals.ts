@@ -1,12 +1,14 @@
-/// <reference path='../../../third_party/freedom-typings/pgp.d.ts' />
+/// <reference path='../../../third_party/typings/browser.d.ts' />
 
-import local_storage = require('./storage');
-import logging = require('../../../third_party/uproxy-lib/logging/logging');
-import loggingTypes = require('../../../third_party/uproxy-lib/loggingprovider/loggingprovider.types');
-import metrics_module = require('./metrics');
-import uproxy_core_api = require('../interfaces/uproxy_core_api');
-import user_interface = require('../interfaces/ui');
 import _ = require('lodash');
+import local_storage = require('./storage');
+import logging = require('../lib/logging/logging');
+import loggingprovider = require('../lib/loggingprovider/loggingprovider.types');
+import metrics_module = require('./metrics');
+import user_interface = require('../interfaces/ui');
+import uproxy_core_api = require('../interfaces/uproxy_core_api');
+
+declare const freedom: freedom.FreedomInModuleEnv;
 
 var log :logging.Log = new logging.Log('globals');
 
@@ -26,22 +28,37 @@ export var DEFAULT_STUN_SERVERS = [
   {urls: ['stun:stun.stunprotocol.org']}
 ];
 
-  // Initially, the STUN servers are a copy of the default.
-  // We need to use slice to copy the values, otherwise modifying this
-  // variable can modify DEFAULT_STUN_SERVERS as well.
+const DEFAULT_PROXY_BYPASS = [
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+];
+
+// Initially, the STUN servers are a copy of the default.
+// We need to use slice to copy the values, otherwise modifying this
+// variable can modify DEFAULT_STUN_SERVERS as well.
 export var settings :uproxy_core_api.GlobalSettings = {
   description: '',
   stunServers: DEFAULT_STUN_SERVERS.slice(0),
   hasSeenSharingEnabledScreen: false,
   hasSeenWelcome: false,
+  hasSeenMetrics: false,
   allowNonUnicast: false,
   mode: user_interface.Mode.GET,
   version: STORAGE_VERSION,
   splashState: 0,
   statsReportingEnabled: false,
-  consoleFilter: loggingTypes.Level.warn,
+  consoleFilter: loggingprovider.Level.warn,
   language: 'en',
-  force_message_version: 0 // zero means "don't override"
+  force_message_version: 0, // zero means "don't override"
+  quiverUserName: '',
+  showCloud: false,
+  proxyBypass: DEFAULT_PROXY_BYPASS.slice(0),
+  enforceProxyServerValidity: false,
+  validProxyServers: [],
+  activePromoId: null,  // set on promoIdDetected
+  shouldHijackDO: true,
+  crypto: true
 };
 
 export var natType :string = '';
@@ -81,10 +98,10 @@ export var effectiveMessageVersion = () : number => {
 export var metrics = new metrics_module.Metrics(storage);
 
 export var publicKey :string;
-export var pgp :PgpProvider = freedom['pgp']();
+export var pgp :freedom.PgpProvider.PgpProvider = freedom['pgp']();
 
 pgp.setup('', '<uproxy>').then(() => {
-  pgp.exportKey().then((key :PublicKey) => {
+  pgp.exportKey().then((key :freedom.PgpProvider.PublicKey) => {
     publicKey = key.key;
   });
 }).catch((e) => {

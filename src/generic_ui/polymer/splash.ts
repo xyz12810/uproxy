@@ -1,10 +1,14 @@
 /// <reference path='./context.d.ts' />
+/// <reference path='../../../../third_party/polymer/polymer.d.ts' />
 
 /**
  * Script for the introductory splash screen.
  */
 
 declare var require :(path :string) => Object;
+
+import ui_constants = require('../../interfaces/ui');
+import _ = require('lodash');
 
 interface Language {
   description :string;
@@ -17,10 +21,10 @@ var ui = ui_context.ui;
 var core = ui_context.core;
 var model = ui_context.model;
 
-Polymer({
+var splash = {
   SPLASH_STATES: {
     INTRO: 0,
-    NETWORKS: 1
+    METRICS_OPT_IN: 1
   },
   setState: function(state :Number) {
     if (state < 0 || state > Object.keys(this.SPLASH_STATES).length) {
@@ -31,16 +35,14 @@ Polymer({
     core.updateGlobalSettings(model.globalSettings);
   },
   next: function() {
-    this.setState(model.globalSettings.splashState + 1);
+    if (model.globalSettings.splashState == this.SPLASH_STATES.METRICS_OPT_IN) {
+      ui.view = ui_constants.View.ROSTER;
+    } else {
+      this.setState(model.globalSettings.splashState + 1);
+    }
   },
   prev: function() {
     this.setState(model.globalSettings.splashState - 1);
-  },
-  copypaste: function() {
-    this.fire('core-signal', { name: 'copypaste-init' });
-  },
-  openFeedbackForm: function() {
-    this.fire('core-signal', {name: 'open-feedback'});
   },
   updateLanguage: function(event :Event, detail :any, sender :HTMLElement) {
     if (detail.isSelected) {
@@ -49,8 +51,22 @@ Polymer({
       window.location.reload();
     }
   },
+  updateSeenMetrics: function(val :Boolean) {
+    model.globalSettings.hasSeenMetrics = true;
+    model.globalSettings.statsReportingEnabled = val;
+    core.updateGlobalSettings(model.globalSettings);
+    this.next();
+  },
+  enableStats: function() {
+    return this.updateSeenMetrics(true);
+  },
+  disableStats: function() {
+    return this.updateSeenMetrics(false);
+  },
   ready: function() {
     this.model = model;
     this.languages = languages;
-  }
-});
+  },
+};
+
+Polymer(splash);

@@ -1,16 +1,15 @@
+/// <reference path='../../../../../third_party/typings/firefox/firefox.d.ts' />
+
 /**
  * firefox_browser_api.ts
  *
  * Firefox-specific implementation of the Browser API.
- * TODO(salomegeo): Figure out if it's possible to set proxy from content script.
  */
-
-/// <reference path='../../../../../third_party/typings/firefox/firefox.d.ts' />
 
 import browser_api =  require('../../../interfaces/browser_api');
 import BrowserAPI = browser_api.BrowserAPI;
 import user_interface = require('../../../generic_ui/scripts/ui');
-import net = require('../../../../../third_party/uproxy-lib/net/net.types');
+import net = require('../../../lib/net/net.types');
 import port = require('./port');
 
 interface FullfillAndReject {
@@ -41,8 +40,10 @@ class FirefoxBrowserApi implements BrowserAPI {
   public setIcon = (iconFile :string) : void => {
     port.emit('setIcon',
         {
-          "18": "./icons/19_" + iconFile,
-          "36": "./icons/38_" + iconFile
+          '18': './icons/18_' + iconFile,
+          '36': './icons/36_' + iconFile,
+          '32': './icons/32_online.png',
+          '64': './icons/64_online.png'
         });
   }
 
@@ -54,7 +55,8 @@ class FirefoxBrowserApi implements BrowserAPI {
     port.emit('launchTabIfNotOpen', url);
   }
 
-  public startUsingProxy = (endpoint:net.Endpoint) => {
+  public startUsingProxy = (endpoint:net.Endpoint, bypass :string[]) => {
+    //TODO actually use bypass list
     port.emit('startUsingProxy', endpoint);
   }
 
@@ -70,20 +72,20 @@ class FirefoxBrowserApi implements BrowserAPI {
     port.emit('showNotification', { text: text, tag: tag });
   }
 
+  public isConnectedToCellular = (): Promise<boolean> => {
+    return Promise.resolve(false);
+  }
+
   public on = (name :string, callback :Function) => {
     port.on(name, callback);
   }
 
-  public frontedPost = (data :any,
-                        externalDomain :string,
-                        cloudfrontDomain :string,
-                        cloudfrontPath = "") : Promise<void> => {
-    return this.promiseEmit('frontedPost', {
-        data: data,
-        externalDomain: externalDomain,
-        cloudfrontDomain: cloudfrontDomain,
-        cloudfrontPath: cloudfrontPath
-      });
+  public respond = (data :any, callback ?:Function, msg ?:string) : void => {
+    msg && this.respond_(data, msg);
+  }
+
+  private respond_ = (data: any, msg :string) : void => {
+    port.emit(msg, data);
   }
 
   /**

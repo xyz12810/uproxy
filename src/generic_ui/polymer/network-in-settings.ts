@@ -14,9 +14,14 @@ Polymer({
     this.networkInfo = network ? network : null;
   },
   connect: function() {
-    ui.login(this.name).catch((e :Error) => {
-      console.warn('Did not log in', e);
-    });
+    if (this.name == 'Quiver') {
+      ui.loginToQuiver();
+    } else {
+      ui.login(this.name).catch((e :Error) => {
+        console.warn('Did not log in', e);
+      });
+    }
+    this.fire('core-signal', {name: 'close-settings'});
   },
   logout: function() {
     if (!this.signedIn) {
@@ -30,6 +35,7 @@ Polymer({
   },
   ready: function() {
     this.model = model;
+    this.displayName = ui.getNetworkDisplayName(this.name);
   },
   observe: {
     'model.onlineNetworks': 'updateSignedIn'

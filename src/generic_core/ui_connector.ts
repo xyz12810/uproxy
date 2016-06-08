@@ -1,12 +1,13 @@
-/// <reference path='../../../third_party/freedom-typings/freedom-module-env.d.ts' />
+/// <reference path='../../../third_party/typings/browser.d.ts' />
 
-import uproxy_core_api = require('../interfaces/uproxy_core_api');
-import freedom_types = require('freedom.types');
 import browser_connector = require('../interfaces/browser_connector');
-import logging = require('../../../third_party/uproxy-lib/logging/logging');
 import globals = require('./globals');
-import social = require('../interfaces/social');
+import logging = require('../lib/logging/logging');
 import social_network = require('./social');
+import social = require('../interfaces/social');
+import uproxy_core_api = require('../interfaces/uproxy_core_api');
+
+declare var freedom: freedom.FreedomInModuleEnv;
 
 var log :logging.Log = new logging.Log('ui_connector');
 
@@ -19,51 +20,64 @@ var bgAppPageChannel = freedom();
 export class UIConnector {
   constructor() {}
 
-  /**
-   * Install a handler for commands received from the UI.
-   */
-  public onCommand = (cmd :uproxy_core_api.Command, handler:any) => {
-    bgAppPageChannel.on('' + cmd,
-      (args :browser_connector.PromiseCommand) => {
-        // Call handler with args.data and ignore other fields in args
-        // like promiseId.
-        handler(args.data);
-      });
+  private fulfillPromise_(promiseId :number,
+                          command :uproxy_core_api.Command,
+                          args?:any) {
+    this.update(uproxy_core_api.Update.COMMAND_FULFILLED, {
+      command: command,
+      promiseId: promiseId,
+      argsForCallback: args,
+    });
   }
 
-  /**
-   * Install a handler for promise commands received from the UI.
-   * Promise commands return an ack or error to the UI.
-   */
-  public onPromiseCommand = (cmd :uproxy_core_api.Command,
-                             handler :(data ?:any) => Promise<any>) => {
-    var promiseCommandHandler = (args :browser_connector.PromiseCommand) => {
-      // Ensure promiseId is set for all requests
-      if (!args.promiseId) {
-        var err = 'onPromiseCommand called for cmd ' + cmd +
-                  'with promiseId undefined';
-        log.error(err);
-        return Promise.reject(new Error(err));
+  private rejectPromise_(promiseId :number, reason :Error) {
+    this.update(uproxy_core_api.Update.COMMAND_REJECTED, {
+      promiseId: promiseId,
+      errorForCallback: reason.toString(),
+    });
+  }
+
+  public onCommand(cmd :uproxy_core_api.Command,
+                   handler :(data ?:any) => (Promise<any>|void)) {
+    // this function returns a promise solely for use in tests, it will normally
+    // not affect anything
+    var commandHandler = (args :browser_connector.PromiseCommand) => {
+      try {
+        var result = handler(args.data);
+      } catch (e) {
+        result = Promise.reject(e);
       }
 
-      // Call handler function, then return success or failure to UI.
-      handler(args.data).then(
-        (argsForCallback ?:any) => {
-          this.update(uproxy_core_api.Update.COMMAND_FULFILLED,
-              { command: cmd,
-                promiseId: args.promiseId,
-                argsForCallback: argsForCallback });
-        },
-        (errorForCallback :Error) => {
-          var rejectionData = {
-            promiseId: args.promiseId,
-            errorForCallback: errorForCallback.toString()
-          };
-          this.update(uproxy_core_api.Update.COMMAND_REJECTED, rejectionData);
+      if (!args.promiseId) {
+        if (result) {
+          console.warn('Unexpected return value from command ' + cmd + ' with ' +
+                       'no way to send result');
         }
-      );
-    };
-    bgAppPageChannel.on('' + cmd, promiseCommandHandler);
+        return Promise.resolve<void>();
+      }
+
+      if (!result) {
+        this.fulfillPromise_(args.promiseId, cmd, null);
+        log.warn('Handler for command ' + cmd + ' did not return the expected ' +
+                 'value');
+        return Promise.resolve<void>();
+      }
+
+      if (!(<Promise<any>>result).then) {
+        log.warn('Handler for command ' + cmd + ' returned a value instead of ' +
+                 'a promise');
+        this.fulfillPromise_(args.promiseId, cmd, result);
+        return Promise.resolve<void>();
+      }
+
+      return (<Promise<any>>result).then((result?:any) => {
+        this.fulfillPromise_(args.promiseId, cmd, result);
+      }, (error :Error) => {
+        this.rejectPromise_(args.promiseId, error);
+      });
+    }
+
+    bgAppPageChannel.on('' + cmd, commandHandler);
   }
 
   /**
@@ -89,6 +103,10 @@ export class UIConnector {
 
   public syncUser = (payload:social.UserData) => {
     this.update(uproxy_core_api.Update.USER_FRIEND, payload);
+  }
+
+  public removeFriend = (args:{ networkName: string, userId :string }) => {
+    this.update(uproxy_core_api.Update.REMOVE_FRIEND, args);
   }
 }
 

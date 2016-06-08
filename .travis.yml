@@ -1,9 +1,10 @@
 language: node_js
 node_js:
-  - "0.10"
+  - "4.4"
 before_install:
   - npm install -g grunt-cli bower
 install:
   - ./setup.sh install
 script:
-  - grunt test
+  - grunt lint test
+sudo: false

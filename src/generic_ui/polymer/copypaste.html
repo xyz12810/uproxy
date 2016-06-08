@@ -1,4 +1,4 @@
-<link rel='import' href='../../bower/paper-button/paper-button.html'>
+<link rel='import' href='button.html'>
 <link rel='import' href='../../bower/paper-input/paper-input-decorator.html'>
 <link rel='import' href='bubble.html'>
 <link rel='import' href='app-bar.html'>
@@ -57,7 +57,7 @@
     <core-signals on-core-signal-copypaste-init='{{ init }}'></core-signals>
 
     <core-header-panel fit>
-      <uproxy-app-bar class='core-header' disableback='{{ ui.copyPasteState.localGettingFromRemote === GettingState.GETTING_ACCESS || ui.copyPasteState.localSharingWithRemote === SharingState.SHARING_ACCESS }}' on-go-back='{{ handleBackClick }}'>
+      <uproxy-app-bar class='core-header' on-go-back='{{ handleBackClick }}'>
         <span hidden?='{{ SharingState.NONE === ui.copyPasteState.localSharingWithRemote }}'>
           {{ 'SHARE_ONE_TIME' | $$ }}
         </span>
@@ -69,7 +69,7 @@
         </span>
       </uproxy-app-bar>
 
-      <uproxy-bubble active='{{ ui.copyPasteError === ui_constants.CopyPasteError.BAD_URL }}' on-closed='{{ dismissError }}' class='error'>
+      <uproxy-bubble active='{{ ui.copyPasteState.error === ui_constants.CopyPasteError.BAD_URL }}' on-closed='{{ dismissError }}' class='error'>
         {{ 'ERROR_PARSING_LINK' | $$ }}
       </uproxy-bubble>
 
@@ -77,17 +77,21 @@
         <div vertical layout fit>
           <div id='wrapper' flex>
             <div id='nothing' hidden?='{{ ui.copyPasteState.localGettingFromRemote !== GettingState.NONE || ui.copyPasteState.localSharingWithRemote !== SharingState.NONE }}'>
-              <p>
+              <p hidden?='{{ lastState == STATE.SHARING }}'>
                 {{ 'NO_LONGER_GETTING' | $$ }}
               </p>
 
+              <p hidden?='{{ lastState == STATE.GETTING }}'>
+                {{ 'NO_LONGER_SHARING' | $$ }}
+              </p>
+
               <div class='centered'>
-                <paper-button on-tap='{{ startGetting }}'>
+                <uproxy-button on-tap='{{ startGetting }}'>
                   {{ 'START_NEW_CONNECTION' | $$ }}
-                </paper-button>
+                </uproxy-button>
               </div>
 
-              <uproxy-bubble active='{{ ui.copyPasteError === ui_constants.CopyPasteError.FAILED }}' on-closed='{{ dismissError }}' class='error'>
+              <uproxy-bubble active='{{ ui.copyPasteState.error === ui_constants.CopyPasteError.FAILED }}' on-closed='{{ dismissError }}' class='error'>
                 {{ 'ERROR_STARTING_CONNECTION' | $$ }}
               </uproxy-bubble>
 
@@ -103,7 +107,7 @@
                   </p>
 
                   <paper-input-decorator label="{{ 'LOADING' | $$ }}" layout vertical>
-                    <input readonly is='core-input' on-tap='{{ select }}' value='https://www.uproxy.org/request/{{ ui.copyPasteGettingMessages | encodeMessage }}' />
+                    <input readonly is='core-input' on-tap='{{ select }}' value='https://www.uproxy.org/request/{{ ui.copyPasteState.message | encodeMessage }}' />
                   </paper-input-decorator>
                 </div>
 
@@ -116,10 +120,10 @@
                     <input is='core-input' value='{{ gettingResponse }}' />
                   </paper-input-decorator>
 
-                  <paper-button raised on-tap='{{ submitGettingLink }}'
+                  <uproxy-button raised on-tap='{{ submitGettingLink }}'
                       hidden?='{{ !showGettingSubmit }}'>
                     {{ 'SUBMIT_ONE_TIME_LINK' | $$ }}
-                  </paper-button>
+                  </uproxy-button>
                 </div>
 
               </div>
@@ -128,27 +132,27 @@
                 <p>{{ 'ONE_TIME_GETTING_SUCCESS' | $$ }}</p>
 
                 <p>
-                  <span hidden?='{{ ui.copyPastePendingEndpoint === null}}'>
+                  <span hidden?='{{ ui.copyPasteState.active === true }}'>
                     {{ 'START_ONE_TIME_INSTRUCTION' | $$ }}
                   </span>
-                  <span hidden?='{{ ui.copyPastePendingEndpoint !== null}}'>
+                  <span hidden?='{{ ui.copyPasteState.active !== true }}'>
                     {{ 'STOP_ONE_TIME_INSTRUCTION' | $$ }}
                   </span>
                 </p>
 
                 <div class='centered'>
-                  <paper-button raised on-tap='{{ startProxying }}'
-                      hidden?='{{ ui.copyPastePendingEndpoint === null }}'>
+                  <uproxy-button raised on-tap='{{ startProxying }}'
+                      hidden?='{{ ui.copyPasteState.active === true }}'>
                     {{ 'START_GETTING' | $$ }}
-                  </paper-button>
+                  </uproxy-button>
 
-                  <paper-button raised class='grey' on-tap='{{ stopGetting }}'
-                      hidden?='{{ ui.copyPastePendingEndpoint !== null }}'>
+                  <uproxy-button raised class='grey' on-tap='{{ stopGetting }}'
+                      hidden?='{{ ui.copyPasteState.active !== true }}'>
                     {{ 'STOP_GETTING' | $$ }}
-                  </paper-button>
+                  </uproxy-button>
                 </div>
 
-                <uproxy-bubble active='{{ ui.copyPasteError === ui_constants.CopyPasteError.UNEXPECTED }}' on-closed='{{ dismissError }}'>
+                <uproxy-bubble active='{{ ui.copyPasteState.error === ui_constants.CopyPasteError.UNEXPECTED }}' on-closed='{{ dismissError }}'>
                   <p>{{ 'ONE_TIME_GETTING' | $$ }}</p>
                   <p>
                     {{ 'STOP_ONE_TIME_GETTING_BEFORE_NEW' | $$ }}
@@ -167,13 +171,13 @@
 
 
                 <paper-input-decorator label="{{ 'LOADING' | $$ }}" layout vertical>
-                  <input readonly is='core-input' on-tap='{{ select }}' value='https://www.uproxy.org/offer/{{ ui.copyPasteSharingMessages | encodeMessage }}' />
+                  <input readonly is='core-input' on-tap='{{ select }}' value='https://www.uproxy.org/offer/{{ ui.copyPasteState.message | encodeMessage }}' />
                 </paper-input-decorator>
 
                 <div>
                   <a href='#' on-tap='{{ switchToGetting }}'>{{ 'GET_ONE_TIME_INSTEAD' | $$ }}</a>
 
-                  <uproxy-bubble active='{{ ui.copyPasteError === ui_constants.CopyPasteError.UNEXPECTED }}' on-closed='{{ dismissError }}'>
+                  <uproxy-bubble active='{{ ui.copyPasteState.error === ui_constants.CopyPasteError.UNEXPECTED }}' on-closed='{{ dismissError }}'>
                     <p>
                       {{ 'TRYING_TO_SHARE_ONE_TIME' | $$ }}
                     </p>
@@ -191,9 +195,9 @@
 
                 <p>{{ 'ONE_TIME_SHARING_STOP_DIRECTIONS' | $$ }}</p>
 
-                <paper-button raised class='grey' on-tap='{{ stopSharing }}'>{{ 'STOP_ONE_TIME_SHARING' | $$ }}</paper-button>
+                <uproxy-button raised class='grey' on-tap='{{ stopSharing }}'>{{ 'STOP_ONE_TIME_SHARING' | $$ }}</uproxy-button>
 
-                <uproxy-bubble active='{{ ui.copyPasteError === ui_constants.CopyPasteError.UNEXPECTED }}' on-closed='{{ dismissError }}' class='error'>
+                <uproxy-bubble active='{{ ui.copyPasteState.error === ui_constants.CopyPasteError.UNEXPECTED }}' on-closed='{{ dismissError }}' class='error'>
                   <p>{{ 'ONE_TIME_SHARING' | $$ }}</p>
 
                   <p>
@@ -205,7 +209,7 @@
           </div> <!-- #wrapper -->
 
           <div id='status'>
-            <div class='statusRow' hidden?='{{ ui.copyPasteState.localGettingFromRemote !== GettingState.GETTING_ACCESS || ui.copyPastePendingEndpoint !== null }}'>
+            <div class='statusRow' hidden?='{{ ui.copyPasteState.localGettingFromRemote !== GettingState.GETTING_ACCESS || ui.copyPasteState.active !== true }}'>
               <div class='statusText'>
                 <core-icon icon='uproxy-icons:receive'></core-icon>
                 {{ 'GETTING_ACCESS_FROM_FRIEND' | $$ }}

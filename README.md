@@ -1,12 +1,12 @@
 # uProxy
 
-[uProxy](uproxy.org) is a browser extension that lets users share their internet connection.
+[uProxy](https://www.uproxy.org) is a browser extension that lets users share their internet connection.
 
-## Build Status
+## Status
 
-Dev: [![Build Status](https://travis-ci.org/uProxy/uproxy.svg?branch=dev)](https://travis-ci.org/uProxy/uproxy)
-[![Build Status](https://api.shippable.com/projects/54c823bf5ab6cc135289fbdc/badge?branchName=dev)](https://app.shippable.com/projects/54c823bf5ab6cc135289fbdc/builds/latest)
-Master: [![Build Status](https://travis-ci.org/uProxy/uproxy.svg?branch=master)](https://travis-ci.org/uProxy/uproxy)
+[![Slack Status](https://uproxy-slack.herokuapp.com/badge.svg)](https://uproxy-slack.herokuapp.com/)
+[![Travis Status](https://travis-ci.org/uProxy/uproxy.svg?branch=dev)](https://travis-ci.org/uProxy/uproxy)
+[![Shippable Status](https://img.shields.io/shippable/54c823bf5ab6cc135289fbdc/dev.svg)](https://app.shippable.com/projects/54c823bf5ab6cc135289fbdc/builds/latest)
 
 ## Tools
 
@@ -15,56 +15,88 @@ uProxy is built using the following tools:
  - [TypeScript](http://www.typescriptlang.org/) as the primary language we code in; this compiles to JavaScript. It gives us type-checking and has some syntax improvements on JS, while letting us incrementally migrate and easily include external JS packages and frameworks.
  - [Jasmine](http://pivotal.github.io/jasmine/) for testing
  - [Polymer](http://www.polymer-project.org/) for UI
+ - [Travis](https://travis-ci.org/) for continuous integration
+ - [Shippable](https://app.shippable.com/) for docker-integrated continuous integration
 
 To manage dependencies we use:
- - [npm](https://www.npmjs.org/) for installing node modules that we use for our build process.  (Specified in `package.json`)
+ - [npm](https://www.npmjs.org/) to install node modules that we use for our build process.  (Specified in `package.json`)
  - [Bower](http://bower.io) to install libraries that we use in the UI
-   (specified in `bower.json`) including AngularJS.
+   (specified in `bower.json`) including Polymer.
 
 
 ## Development setup
 
-Please read the [uProxy Coding Guide](https://docs.google.com/document/d/12RfgwSLnEm-X5Knj1xFVGpp-MH7BdWjuzzo_g7xabro/edit) to learn more about contributing to uProxy. 
+Please read the [uProxy Coding Guide](https://docs.google.com/document/d/12RfgwSLnEm-X5Knj1xFVGpp-MH7BdWjuzzo_g7xabro/edit) to learn more about contributing to uProxy. For a high level technical overview of uProxy, see the [uProxy Design Doc](https://docs.google.com/document/d/1t_30vX7RcrEGuWwcg0Jub-HiNI0Ko3kBOyqXgrQN3Kw/edit#).
 
-### Pre-Requirements to build uProxy
+### Prerequisites to build uProxy
 
 Note: you will either need to run these as root, or set the directories they
-modify (`/usr/local`) to being editable by your user (sudo chown -R $USER /usr/local)
+modify (`/usr/local`) to being editable by your user (`sudo chown -R $USER /usr/local`)
+
+- [git](https://git-scm.com/)
+    - Most machines will have git pre-installed. If you need to install git, you can find instructions from the [git website](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git).
+    - For Windows, install the [desktop git app](https://desktop.github.com/), which provides an easy-to-use interface for git.
 
 - [node](http://nodejs.org/) and npm (Node's package manager):
 
-    - On Mac with Brew, you can do: `brew install node` (You may need to update your brew package manager, e.g. `brew update`). You can also install directly from a Mac package off the [NodeJS Website](http://nodejs.org/).
+    - On **Mac** with Brew, you can do: `brew install node` (You may need to update your brew package manager, e.g. `brew update`). You can also install directly from a Mac package off the [NodeJS Website](http://nodejs.org/).
+        - If you do not have [Homebrew](http://brew.sh), you can install it by running `ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"`
 
-    - On Ubuntu, you can do `apt-get install nodejs`.
-    - We also need to create symlink ( if we are not running legacy node) <br>
+    - On **Ubuntu**, you can do `apt-get install nodejs`.
+    - You may need to create a symlink (if we are not running legacy node) <br>
       Use this: <br>
-      ln -s /usr/bin/nodejs /usr/bin/node 
+      ln -s /usr/bin/nodejs /usr/bin/node
 
-    - On Archlinux, you can do 'pacman -S nodejs'.
+    - On **Archlinux**, you can do 'pacman -S nodejs'.
+
+    - On **Windows**, you can download the installer from the [NodeJS Website](http://nodejs.org/).
 
     - You may need to set your `$NODE_PATH` environment variable appropriately
       (e.g. it might be: `/usr/local/share/npm/lib/node_modules`).
 
-    - If you install npm things globally, you'll need to do so as the
-      appropriate super-user.
-
     - To run binaries from globally-installed npm packages without
-      fully-qualifying paths, make sure you have added your npm bin directory to your path (e.g. `export PATH=$PATH:/usr/local/share/npm/bin/grunt`).
-
-    - On Windows, you can download the installer from the [NodeJS Website](http://nodejs.org/).
+      fully-qualifying paths, make sure you have added your npm bin directory to your path
+        - on Mac or Ubuntu, e.g. `export PATH=$PATH:/usr/local/share/npm/bin/grunt`
+        - on Windows,
+            - Open Control Panel > System and Security > System > Advanced System Settings
+            - In the Advanced tab, click on "Environment Variables"
+            - In System Variables, click on "Path" (or "PATH")
+            - At the end of the "Variable value:" string, append a ";" and the path to your bin directory, e.g. "C:\Program Files\nodejs\node_modules\npm\lib;C:\Users\<YOUR_PATH>\AppData\Roaming\npm\node_modules\grunt-cli\bin"
 
 - [Grunt](http://gruntjs.com/): Install globally with `npm install -g grunt-cli`
+    - To install globally on Windows, open the command prompt as admin and then run the command
 
 ### Building uProxy from source
 
- 1. Clone uProxy and its submodules (and its submodules' submodules...): `git clone https://github.com/uProxy/uProxy.git` or `git clone git@github.com:uProxy/uproxy.git` if you have your ssh access to github set up (useful if you use 2-step auth for github, which you should do).
+ 1. In your terminal, navigate to a directory where you would like to download uProxy. E.g., `cd ~/uProxy`
 
- 1. In the root uProxy directory, run:
-   * In OS X or Linux, run `./setup.sh install` - this will set up build tools and third-party dependencies.
+ 1. Clone the uProxy repository: `git clone https://github.com/uProxy/uProxy.git` or `git clone git@github.com:uProxy/uproxy.git` if you have your ssh access to GitHub set up (useful if you use 2-step auth for GitHub, which you should do).
+
+ 1. Navigate into uProxy's root directory with `cd uproxy`
+
+ 1. Setup build tools and third-party dependencies:
+   * In OS X or Linux, run `./setup.sh install`
    * In Windows, run `.\setup.cmd install` instead (in cmd or PowerShell).
-   * Then run `grunt` - this will build everything, including uProxy for Chrome and Firefox.
+ 1. Run `grunt` - this will build everything, including uProxy for Chrome and Firefox.
 
 Note that if any local dependencies have changed (i.e. changes to bower dependencies, updates to FreeDOM), you will have to run `./setup.sh install` to update these dependencies, then rerun `grunt`
+
+### IDE
+
+Sublime Text 3 provides a good development experience:
+
+ * Install [Sublime Text 3](http://www.sublimetext.com/3).
+ * Install [Package Control](https://packagecontrol.io/).
+ * Install the [TypeScript Sublime plugin](https://github.com/Microsoft/TypeScript-Sublime-Plugin).
+
+Now, TypeScript files will have syntax highlighting and include support for "jump to definition" and refactoring (renaming).
+
+Several compile errors will remain, namely imports from `../../../third_party`. To workaround, Unix (and OSX) users can create a symlink:
+
+ * `cd` to the directory containing the repo
+ * `ln -s uproxy-lib/build/third_party ../third_party`
+
+Re-compile, with F7 (and perhaps restart Sublime, just to be sure) to resolve these errors.
 
 ### Installing and running
 
@@ -117,6 +149,88 @@ Before submitting any changes to the repository, make sure to run `grunt test`
 to make sure it passes all unit tests. Failing tests are enough to immediately
 reject submissions. :)
 
+### uProxy for Android
+
+uProxy can now be built as an Android App, using the Cordova Chrome Apps (CCA)
+tool, also known as the [Chrome Apps for Mobile Toolchain](https://github.com/MobileChromeApps/mobile-chrome-apps).
+After following the steps under "Building uProxy from source",
+ 1. Install the Android SDK.  The easiest way to get it is as part of [Android Studio](https://developer.android.com/sdk/index.html).
+   * *Linux-only* Add the Android tools to your path, e.g. by modifying your `.bashrc` to include `PATH=$PATH:$HOME/android-studio/tools`.
+ 1. Install the `adb` tool.
+   * MacOS: `adb` is included with Android Studio.
+   * Linux: `adb` is available through your package manager.  For example, on Ubuntu run `apt-get install android-tools-adb`.
+ 1. Confirm that your `cca` package is ready by running `node_modules/.bin/cca checkenv` from the git checkout root directory.
+   * If this fails, set the `ANDROID_HOME` variable to the Android SDK path in your `.bashrc`, e.g. `export ANDROID_HOME=$HOME/Android/Sdk`
+
+Then you can build the app using `grunt build_android`.  The output, a file ending
+in `.apk`, will appear in `build/dev/uproxy/android/platforms/android/build/outputs/apk/`.
+Depending on the build configuration, the file might be named `android-debug.apk`,
+`android-armv7-debug.apk`, etc..
+
+#### Installing on an Android device
+* To install the app, first [Enable USB Debugging](http://developer.android.com/tools/device.html#device-developer-options)
+on your test phone, then connect it to your computer and accept the connection
+on the phone.
+* Then, on your computer, install the app on the phone using a command like
+`adb install -r build/dev/uproxy/android/platforms/android/build/outputs/apk/android-debug.apk`.
+* You may then launch the app from the phone. Rerunning this command should close the app
+and replace it with a new version, but will not overwrite saved state on the device.
+
+If you encounter an error or want to complete delete uProxy from your phone, you can do so via
+`Settings -> Apps -> uProxy`, which as a button labeled "Uninstall for all users".
+
+#### Installing on an Android emulator
+* Create a virtual device using the [Android Virtual Device
+Manager](http://developer.android.com/tools/devices/index.html) with an API of 21
+(Lollipop) or higher.
+* Launch the emulator and check `adb devices` at the command line to
+make sure an emulator is running. 
+* Install the app from the command line with `adb install -r build/dev/uproxy/android/platforms/android/build/outputs/apk/android-debug.apk`. You should see `success` if the app is installed.
+* You may then launch the app from the emulator.
+
+#### Creating a Play Store release build
+Android app release builds must be signed.  To create a release build:
+ 1. Get the appropriate `play_store_keys.p12` and `android-release-keys.properties` files, and symlink them into a `keys` directory in the git repo root.
+   * The uProxy team's release keys are stored in a secure location, not in the public git repository.  Symlinking ensures that you do not accidentally copy the keys into insecure storage.
+ 1. Run `grunt release_android`
+ 1. From the `build/dev/uproxy/android/platforms/android/build/outputs/apk/` directory, upload `android-release.apk`, `android-x86-release.apk`, and `android-armv7-release.apk` to the Play Store using [the multiple APK upload procedure](http://developer.android.com/google/play/publishing/multiple-apks.html).
+   * This allows us to have a smaller build (~10 MB) for modern Android, and a larger build (~33 MB) for older Android versions that need [Crosswalk](https://crosswalk-project.org/) because the system webview is too old to run uProxy.
+
+### uProxy for iOS
+uProxy can be built on iOS by using CCA, similarly to uProxy on Android. You can only run uProxy for iOS on OS X with Xcode and the iOS SDK installed.
+
+* Install [Xcode](https://developer.apple.com/xcode/download/) 6.0 or higher
+* Once Xcode is installed, several Command Line Tools need to be enabled for CCA to run. From the Xcode menu, select Preferences, then the Downloads tab. From the Components panel, press the Install button next to the Command Line Tools listing if it's there. Next select the Locations tab and select a version of xcode from the Command Line Tools select box.
+* Install the Android SDK.  The easiest way to get it is as part of [Android Studio](https://developer.android.com/sdk/index.html). 
+* `sudo npm install -g cca`
+* `npm install xcode` (npm install locally)
+
+Note: In order for uProxy to work on an iOS device right now, crypto must be disabled in the global settings for both the getter and the sharer.
+
+#### Running on an iOS emulator
+* `sudo npm install -g ios-sim`
+* `grunt build_ios`
+* `cd build/dev/uproxy/ios`
+* `cca run ios --emulator`
+
+#### Running on an iOS device
+* In order to run an app on your iOS device, you need to have an [Apple Developer Account](https://developer.apple.com/programs/) and an [iOS Development Certificate](https://developer.apple.com/library/ios/documentation/IDEs/Conceptual/AppDistributionGuide/MaintainingCertificates/MaintainingCertificates.html). Once you have these set up you can continue with the following steps.
+* Attach a device to your Mac through a USB 
+* `sudo npm install -g --unsafe-perm ios-deploy`
+* `grunt build_ios`
+* `cd build/dev/uproxy/ios/`
+* `cca run ios --device`
+
+#### Open uProxy in Xcode
+* `grunt build_ios`
+* `open build/dev/uproxy/ios/platforms/ios/uProxy.xcodeproj/`
+* When prompted with the question "Convert to Latest Swift Syntax?" choose "Cancel"
+
+Because we use cordova-plugin-iosrtc to implement the WebRTC protocol, there are a few Build Settings you may need to update when running uProxy from Xcode:
+* Within the project Build Settings set "Enable Bitcode" to "No"
+* Within the project Build Settings set "Objective-C Bridging Header" to "uProxy/Plugins/cordova-plugin-iosrtc/cordova-plugin-iosrtc-Bridging-Header.h"
+* Within the project Build Settings add an entry to the "Runpath Search Paths" setting with value "@executable_path/Frameworks"
+* Now you can update uProxy and run it with xcode from either an emulator or device
 
 ### Fixing compilation and setup
 
@@ -154,14 +268,3 @@ Dynamically created directories (`grunt clean` should remove them)
  * `build/dist` created by grunt tasks; holds final distribution versions
  * `.grunt` holds grunt cache stuff
  * `.tscache` holds typescript cache stuff
-
-## Glossary of frameworks you need to know about
-
- * [Bower](http://bower.io) (and the `bower.json` file) - a package manager for the web. Used for javascript and web-libraries that the extension uses (e.g. angular). Note: this uses the file .bowerrc to specify where bower components get installed (in third_party/bower_components)
- * [Coveralls](https://coveralls.io/): a continuous coverage checking system
- * [Grunt](http://gruntjs.com/) (and the `Gruntfile.js` file) - a JavaScript task runner, used for compilation/building
- * [Jasmine](http://pivotal.github.io/jasmine/) - a testing framework for JavaScript.
- * [Karma](http://karma-runner.github.io/) - a test runner
- * [NPM](https://www.npmjs.org/) (and the `package.json` file): NPM (node package manager) us used to specify dependencies on node modules we use for compilation, e.g. typescript and grunt. These dependencies get places in the `node_modules` directory
- * [Travis](https://travis-ci.org/): a continuous build system
- * [TypeScript](http://www.typescriptlang.org/) as the primary language, which compiles to JavaScript. This does type checking and has some syntax improvements on JS, while letting us incrementally migrate and easily include external JS packages and frameworks

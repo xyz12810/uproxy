@@ -1,6 +1,7 @@
-/// <reference path='../../../../../third_party/typings/chrome/chrome.d.ts' />
+/// <reference path='../../../../../third_party/typings/browser.d.ts'/>
 /// <reference path='../../../generic_ui/polymer/context.d.ts' />
 
+import ui_model = require('../../../generic_ui/scripts/model');
 import user_interface = require('../../../generic_ui/scripts/ui');
 import CoreConnector = require('../../../generic_ui/scripts/core_connector');
 import CordovaCoreConnector = require('./cordova_core_connector');
@@ -11,7 +12,7 @@ export var browserConnector = new CordovaCoreConnector({
 });
 export var core = new CoreConnector(browserConnector);
 export var ui :user_interface.UserInterface;
-export var model :user_interface.Model;
+export var model :ui_model.Model;
 
 chrome.runtime.getBackgroundPage((bgPage) => {
   ui_context = (<any>bgPage).ui_context;
@@ -23,11 +24,20 @@ chrome.runtime.getBackgroundPage((bgPage) => {
   link.rel = 'import';
   link.href = 'generic_ui/polymer/vulcanized.html'
   link.onload = function(e) {
-    document.body.innerHTML = '<uproxy-root></uproxy-root>';
+    // Setting document.body.innerHTML is forbidden, because CCA uses
+    // an <iframe> in this page to represent the background page.
+    var root = document.createElement('uproxy-root');
+    document.body.appendChild(root);
   };
   link.onerror = function(e) {
     console.log('Error while loading polymer/vulcanized.html:', e);
   };
   document.head.appendChild(link);
 });
+
+// Force a repaint every 300 ms.
+// Extremely hacky workaround for https://crbug.com/612836
+setInterval(function() {
+  window.top.dispatchEvent(new Event('resize'));
+}, 300);
 
